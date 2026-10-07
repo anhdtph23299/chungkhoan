@@ -1,0 +1,458 @@
+<div class="dashboard-container">
+  <!-- Top Market Indices Ticker Bar -->
+  <div class="indices-bar glass-card">
+    <!-- Loading indices -->
+    <ng-container *ngIf="marketIndices.length === 0">
+      <div class="index-item" *ngFor="let n of ['VN-INDEX','VN30','HNX-INDEX','UPCOM']">
+        <div class="index-header"><span class="index-name">{{ n }}</span></div>
+        <div class="index-stats"><span class="index-val font-mono text-muted">---.--</span></div>
+      </div>
+    </ng-container>
+    <div class="index-item" *ngFor="let idx of marketIndices">
+      <div class="index-header">
+        <span class="index-name">{{ idx.name }}</span>
+        <span class="index-vol">{{ formatVolume(idx.totalValue) }}</span>
+      </div>
+      <div class="index-stats">
+        <span class="index-val font-mono">{{ idx.value | number:'1.2-2' }}</span>
+        <span class="pill" [ngClass]="idx.change >= 0 ? 'pill-up' : 'pill-down'">
+          {{ idx.change >= 0 ? '+' : '' }}{{ idx.change | number:'1.2-2' }} ({{ idx.changePercent >= 0 ? '+' : '' }}{{ idx.changePercent | number:'1.2-2' }}%)
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header & Quick Actions -->
+  <div class="dashboard-header">
+    <div>
+      <h1 class="page-title">Hệ Thống Theo Dõi Giao Dịch Chứng Khoán VN</h1>
+      <p class="page-subtitle">Phương pháp định lượng & Quản trị rủi ro nghiêm ngặt để đạt lợi nhuận bền vững</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-outline" routerLink="/schedule">
+        <span>📅</span> Lịch Giao Dịch
+      </button>
+      <button class="btn btn-outline" routerLink="/risk">
+        <span>🛡️</span> Quản Trị Rủi Ro
+      </button>
+      <button class="btn btn-primary" (click)="openQuickTrade()">
+        <span>⚡</span> + Vào Lệnh Mới
+      </button>
+    </div>
+  </div>
+
+  <!-- 4 Primary Metric Cards -->
+  <!-- Loading state khi backend chưa trả về -->
+  <div *ngIf="isLoadingMain" class="metrics-grid">
+    <div class="glass-card metric-card" *ngFor="let _ of [1,2,3,4]">
+      <div class="metric-top"><span class="metric-label">Đang tải...</span></div>
+      <div class="metric-value font-mono text-muted">— — —</div>
+    </div>
+  </div>
+
+  <!-- Thông báo backend offline -->
+  <div *ngIf="!isLoadingMain && !backendOnline" class="glass-card action-banner" style="border-color: #f59e0b; margin-bottom: 1rem;">
+    ⚠️ Backend chưa chạy — Khởi động Spring Boot để xem dữ liệu thật
+  </div>
+
+  <div *ngIf="!isLoadingMain && summary" class="metrics-grid">
+    <div class="glass-card metric-card">
+      <div class="metric-top">
+        <span class="metric-label">TỔNG GIÁ TRỊ TÀI SẢN (NAV)</span>
+        <span class="metric-icon">💰</span>
+      </div>
+      <div class="metric-value font-mono">{{ summary!.currentValue | number:'1.0-0' }} <span class="currency">đ</span></div>
+      <div class="metric-foot">
+        <span class="text-secondary">Vốn đầu tư ban đầu:</span>
+        <span class="font-mono text-main">{{ summary!.totalInvested | number:'1.0-0' }} đ</span>
+      </div>
+    </div>
+
+    <div class="glass-card metric-card" [class.glow-up]="summary!.totalPnl >= 0" [class.glow-down]="summary!.totalPnl < 0">
+      <div class="metric-top">
+        <span class="metric-label">TỔNG LỢI NHUẬN (P&L)</span>
+        <span class="metric-icon">📈</span>
+      </div>
+      <div class="metric-value font-mono" [ngClass]="summary!.totalPnl >= 0 ? 'stock-up' : 'stock-down'">
+        {{ summary!.totalPnl >= 0 ? '+' : '' }}{{ summary!.totalPnl | number:'1.0-0' }} <span class="currency">đ</span>
+      </div>
+      <div class="metric-foot">
+        <span class="pill" [ngClass]="summary!.totalPnlPercent >= 0 ? 'pill-up' : 'pill-down'">
+          {{ summary!.totalPnlPercent >= 0 ? '▲ +' : '▼ ' }}{{ summary!.totalPnlPercent | number:'1.2-2' }}%
+        </span>
+        <span class="text-secondary text-sm">so với vốn bỏ ra</span>
+      </div>
+    </div>
+
+    <div class="glass-card metric-card">
+      <div class="metric-top">
+        <span class="metric-label">TỶ LỆ THẮNG (WIN RATE)</span>
+        <span class="metric-icon">🎯</span>
+      </div>
+      <div class="metric-value font-mono stock-up">{{ summary!.winRate | number:'1.1-1' }}%</div>
+      <div class="metric-foot">
+        <span class="text-secondary">Thắng: <strong class="stock-up">{{ summary!.winningTrades }}</strong> / Tổng: <strong>{{ summary!.totalTrades }}</strong> lệnh</span>
+      </div>
+    </div>
+
+    <div class="glass-card metric-card">
+      <div class="metric-top">
+        <span class="metric-label">VỊ THẾ ĐANG NẮM GIỮ</span>
+        <span class="metric-icon">💼</span>
+      </div>
+      <div class="metric-value font-mono">{{ openPositions.length }} <span class="currency">mã</span></div>
+      <div class="metric-foot">
+        <span class="pill pill-purple">Quy tắc R:R ≥ 1:2.0</span>
+        <span class="text-secondary text-sm">Tuân thủ SL 7%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alert Message Banner -->
+  <div *ngIf="actionMessage" class="glass-card action-banner glow-up">
+    <span>{{ actionMessage }}</span>
+  </div>
+
+  <!-- Veteran Rules & Daily Money Engine Showcase -->
+  <div class="glass-card veteran-showcase-panel">
+    <div class="panel-header">
+      <div class="panel-title-group">
+        <span class="panel-icon">🏛️</span>
+        <div>
+          <h2 class="panel-title">Cỗ Máy Kiếm Tiền Tự Động & 7 Tiêu Chuẩn Vàng Của Già Làng</h2>
+          <p class="panel-desc">Đúc kết từ kinh nghiệm mã nguồn mở GitHub (vnstock) & bài học xương máu quỹ đầu cơ Việt Nam</p>
+        </div>
+      </div>
+      <div class="panel-actions">
+        <span class="badge-audit" [class.badge-perfect]="veteranAudit?.disciplineScore === 100">
+          🛡️ Điểm Kỷ Luật: {{ veteranAudit?.disciplineScore || 100 }}/100
+        </span>
+        <button class="btn btn-sm btn-outline" (click)="fastForwardDay()">
+          ⏩ Tua Nhanh Phiên T+1
+        </button>
+      </div>
+    </div>
+
+    <!-- 3 Core Engine Columns -->
+    <div class="veteran-grid">
+      <!-- Col 1: Daily Cash Harvest Status -->
+      <div class="sub-card harvest-card">
+        <div class="sub-head">
+          <span>💵 DÒNG TIỀN KIẾM ĐƯỢC {{ isWeekend ? '(PHIÊN GẦN NHẤT)' : 'HÔM NAY' }}</span>
+          <span class="pill" [ngClass]="isWeekend ? 'pill-purple' : 'pill-green'">
+            {{ isWeekend ? '☕ THỊ TRƯỜNG NGHỈ CUỐI TUẦN' : 'ĐÃ KHẤU TRỪ THUẾ/PHÍ' }}
+          </span>
+        </div>
+        <div class="harvest-value font-mono" *ngIf="dailyIncome; else incomeLoading">
+          +{{ dailyIncome.dailyRealizedProfit | number:'1.0-0' }} <span class="currency">đ</span>
+        </div>
+        <ng-template #incomeLoading><div class="harvest-value font-mono text-muted">Đang tải...</div></ng-template>
+        <div class="harvest-breakdown" *ngIf="dailyIncome">
+          <div class="breakdown-item">
+            <span class="text-secondary">Tiền tươi rút tiêu dùng (30%):</span>
+            <strong class="stock-up font-mono">+{{ dailyIncome.withdrawableIncome | number:'1.0-0' }} đ</strong>
+          </div>
+          <div class="breakdown-item">
+            <span class="text-secondary">Tái đầu tư sinh lãi kép (70%):</span>
+            <strong class="stock-purple font-mono">+{{ dailyIncome.reinvestmentCapital | number:'1.0-0' }} đ</strong>
+          </div>
+        </div>
+        <div class="target-progress" *ngIf="dailyIncome">
+          <div class="progress-label">
+            <span>Mục tiêu ngày ({{ dailyIncome.dailyTarget | number:'1.0-0' }} đ):</span>
+            <span class="stock-up">{{ getTargetProgress() }}% CHỈ TIÊU {{ getTargetProgress() >= 100 ? '🎉' : '' }}</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" [style.width]="(getTargetProgress() > 100 ? 100 : getTargetProgress()) + '%'"></div>
+          </div>
+          <div class="status-msg text-xs text-secondary" style="margin-top: 0.5rem; line-height: 1.4;">
+            {{ dailyIncome.dailyStatusMessage }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Col 2: 90-Day Monte Carlo Projections -->
+      <div class="sub-card projection-card">
+        <div class="sub-head">
+          <span>📈 DỰ PHÓNG LÃI KÉP 90 NGÀY</span>
+          <span class="pill pill-blue">MONTE CARLO (1000 RUNS)</span>
+        </div>
+        <div class="projection-stats" *ngIf="wealthProjection; else projLoading">
+          <div class="p-stat">
+            <span class="text-secondary">NAV dự phóng 90 ngày:</span>
+            <div class="stat-number font-mono stock-up">~{{ wealthProjection.projectedNav90Days | number:'1.0-0' }} đ</div>
+          </div>
+          <div class="p-stat">
+            <span class="text-secondary">Tiền mặt rút tiêu xài sau 90 ngày:</span>
+            <div class="stat-number font-mono text-warning">+{{ wealthProjection.projectedWithdrawableCash90Days | number:'1.0-0' }} đ</div>
+          </div>
+          <div class="p-stat">
+            <span class="text-secondary">Thời gian ước tính nhân đôi NAV (2x):</span>
+            <div class="stat-number font-mono stock-purple">~{{ wealthProjection.estimatedDaysToDoubleNav }} phiên</div>
+          </div>
+        </div>
+        <ng-template #projLoading><div class="text-muted text-sm" style="padding:1rem">Đang tính toán Monte Carlo...</div></ng-template>
+      </div>
+
+      <!-- Col 3: Smart Money Big Whale Flow -->
+      <div class="sub-card smart-money-card">
+        <div class="sub-head">
+          <span>🐳 DÒNG TIỀN LỚN CÁ MẬP BẢO TRỢ</span>
+          <span class="pill pill-gold">SMART MONEY FLOW</span>
+        </div>
+        <div class="smart-list">
+          <div class="smart-item" *ngFor="let s of smartMoneyPicks">
+            <div class="s-top">
+              <strong class="s-symbol">{{ s.symbol }}</strong>
+              <span class="font-mono text-sm">{{ s.currentPrice | number:'1.0-0' }} đ</span>
+              <span class="pill pill-xs pill-green">{{ s.accumulationScore }}/100</span>
+            </div>
+            <div class="s-desc text-secondary text-xs">
+              Mua chủ động: <strong>{{ s.buyActiveRatio }}%</strong> | Khối ngoại: <strong>+{{ (s.foreignNetBuy / 1000000000) | number:'1.1-1' }} tỷ</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7 Veteran Golden Rule Badges -->
+    <div class="veteran-badges-row">
+      <div class="v-badge" *ngFor="let r of veteranAudit?.ruleChecks">
+        <span class="v-check">✅</span>
+        <span class="v-text">{{ r.ruleName }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Layout -->
+  <div class="dashboard-body">
+    <!-- Left Column: Positions & Disciplined Trading Box -->
+    <div class="body-main">
+      <!-- Active Positions Card -->
+      <div class="glass-card content-card">
+        <div class="card-head">
+          <div class="head-left">
+            <h2>Vị Thế Đang Mở (Active Positions)</h2>
+            <span class="badge-count">{{ openPositions.length }} mã</span>
+          </div>
+          <a routerLink="/portfolio" class="link-more">Xem chi tiết danh mục →</a>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Mã CP</th>
+                <th>Sàn</th>
+                <th>Khối Lượng</th>
+                <th>Giá Mua TB</th>
+                <th>Giá TT</th>
+                <th>Lãi / Lỗ</th>
+                <th>Cắt Lỗ (SL 7%)</th>
+                <th>Chốt Lời (TP)</th>
+                <th>Chiến Lược</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let pos of openPositions">
+                <td>
+                  <span class="symbol-tag">{{ pos.symbol }}</span>
+                </td>
+                <td><span class="text-muted text-xs">{{ pos.exchange }}</span></td>
+                <td class="font-mono">{{ pos.quantity | number }}</td>
+                <td class="font-mono">{{ pos.price | number }}</td>
+                <td class="font-mono font-bold">{{ (pos.price + (pos.pnl || 0) / (pos.quantity || 1)) | number }}</td>
+                <td>
+                  <span class="font-mono font-bold" [ngClass]="(pos.pnl || 0) >= 0 ? 'stock-up' : 'stock-down'">
+                    {{ (pos.pnl || 0) >= 0 ? '+' : '' }}{{ pos.pnl | number:'1.0-0' }} đ
+                  </span>
+                  <div class="text-xs" [ngClass]="(pos.pnlPercent || 0) >= 0 ? 'stock-up' : 'stock-down'">
+                    ({{ (pos.pnlPercent || 0) >= 0 ? '+' : '' }}{{ pos.pnlPercent | number:'1.2-2' }}%)
+                  </div>
+                </td>
+                <td class="font-mono stock-down">{{ pos.stopLoss ? (pos.stopLoss | number) : '--' }}</td>
+                <td class="font-mono stock-up">{{ pos.takeProfit ? (pos.takeProfit | number) : '--' }}</td>
+                <td><span class="strategy-badge">{{ pos.strategy }}</span></td>
+              </tr>
+              <tr *ngIf="openPositions.length === 0">
+                <td colspan="9" class="text-center text-muted py-4">Chưa có vị thế nào. Nhấn "+ Vào Lệnh Mới" để bắt đầu!</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Golden Discipline Card (Crucial for Profitability) -->
+      <div class="glass-card discipline-card">
+        <div class="discipline-head">
+          <span class="bulb-icon">💡</span>
+          <div>
+            <h3>3 Nguyên Tắc Bất Di Bất Dịch Để Giao Dịch Chứng Khoán Có Lãi</h3>
+            <p class="text-secondary text-sm">Hệ thống hóa quyết định - Loại bỏ cảm xúc và tâm lý FOMO</p>
+          </div>
+        </div>
+
+        <div class="discipline-grid">
+          <div class="rule-box">
+            <div class="rule-num">01</div>
+            <h4>Cắt Lỗ Dứt Khoát Tại 7% - 8%</h4>
+            <p>Tuyệt đối không gồng lỗ hay trung bình giá xuống cổ phiếu đang rớt. Một khoản lỗ 50% cần lãi 100% mới hòa vốn!</p>
+          </div>
+
+          <div class="rule-box">
+            <div class="rule-num">02</div>
+            <h4>Tỷ Lệ Risk/Reward Luôn ≥ 1:2</h4>
+            <p>Chỉ mở lệnh khi lợi nhuận kỳ vọng tối thiểu gấp 2 lần mức rủi ro chấp nhận mất. Xác suất thắng 40% bạn vẫn có lãi lớn.</p>
+          </div>
+
+          <div class="rule-box">
+            <div class="rule-num">03</div>
+            <h4>Ghi Chép Nhật Ký 100% Các Lệnh</h4>
+            <p>Xem xét sai lầm sau mỗi lệnh thua để cải thiện chiến lược. Chuẩn hóa lộ trình trước khi nâng quy mô tiền thật.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Hot Stocks & Real Money Roadmap -->
+    <div class="body-side">
+      <!-- Hot Watchlist Tickers -->
+      <div class="glass-card content-card">
+        <div class="card-head">
+          <div class="head-left">
+            <h2>Mã Cổ Phiếu Tâm Điểm</h2>
+          </div>
+          <a routerLink="/watchlist" class="link-more">Xem Bảng Giá →</a>
+        </div>
+
+        <div class="hot-quotes-list">
+          <div class="quote-row" *ngFor="let q of hotQuotes">
+            <div class="quote-left">
+              <span class="quote-symbol">{{ q.symbol }}</span>
+              <span class="quote-vol text-muted">{{ (q.volume / 1000000) | number:'1.1-1' }}M cp</span>
+            </div>
+            <div class="quote-right">
+              <span class="quote-price font-mono" [ngClass]="q.change >= 0 ? 'stock-up' : 'stock-down'">
+                {{ q.price | number }}
+              </span>
+              <span class="pill" [ngClass]="q.change >= 0 ? 'pill-up' : 'pill-down'">
+                {{ q.change >= 0 ? '+' : '' }}{{ q.changePercent | number:'1.2-2' }}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Real Money Trading Roadmap -->
+      <div class="glass-card roadmap-card">
+        <div class="roadmap-head">
+          <span class="badge-stage">Lộ Trình Tiến Đến Tiền Thật</span>
+          <h3>Trưởng Thành Cùng Thị Trường</h3>
+        </div>
+
+        <div class="roadmap-steps">
+          <div class="step-item done">
+            <div class="step-marker">✓</div>
+            <div class="step-info">
+              <strong>Giai đoạn 1: Demo & Chuẩn Hóa Kỷ Luật</strong>
+              <p>Thực hiện ít nhất 30 lệnh trên hệ thống tuân thủ cắt lỗ 7% và R:R ≥ 2.</p>
+            </div>
+          </div>
+
+          <div class="step-item current">
+            <div class="step-marker">2</div>
+            <div class="step-info">
+              <strong>Giai đoạn 2: Thử Nghiệm Vốn Nhỏ (10-20tr)</strong>
+              <p>Rèn luyện tâm lý chịu nhiệt khi đối mặt biến động thật của thị trường VN.</p>
+            </div>
+          </div>
+
+          <div class="step-item">
+            <div class="step-marker">3</div>
+            <div class="step-info">
+              <strong>Giai đoạn 3: Tăng Quy Mô Vốn Tự Tin</strong>
+              <p>Chỉ nạp thêm tiền khi tài khoản sinh lời liên tục 2 quý liên tiếp.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Trade Modal -->
+  <div class="modal-overlay" *ngIf="showQuickTradeModal" (click)="closeQuickTrade()">
+    <div class="modal-card glass-card" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3>⚡ Mở Vị Thế Giao Dịch Mới</h3>
+        <button class="modal-close" (click)="closeQuickTrade()">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Mã Cổ Phiếu (Ticker)</label>
+            <input type="text" class="form-control font-mono uppercase" [(ngModel)]="newTrade.symbol" (ngModelChange)="onSymbolChange()" placeholder="VD: FPT, HPG, SSI">
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Sàn Giao Dịch</label>
+            <select class="form-control" [(ngModel)]="newTrade.exchange">
+              <option value="HOSE">HOSE (TP.HCM)</option>
+              <option value="HNX">HNX (Hà Nội)</option>
+              <option value="UPCOM">UPCOM</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Giá Khớp Dự Kiến (VND)</label>
+            <input type="number" step="100" class="form-control font-mono" [(ngModel)]="newTrade.price" (ngModelChange)="autoCalculateTargets()" placeholder="VD: 135000">
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Khối Lượng Mua (Cổ phiếu)</label>
+            <input type="number" step="100" class="form-control font-mono" [(ngModel)]="newTrade.quantity" placeholder="Bội số 100 cp (VD: 1000)">
+          </div>
+        </div>
+
+        <div class="targets-preview">
+          <div class="target-box sl-box">
+            <span class="target-title">Cắt Lỗ Tự Động (-7%)</span>
+            <span class="target-val font-mono stock-down">{{ newTrade.stopLoss | number }} đ</span>
+            <span class="target-sub">Kỷ luật thoát hàng khi chạm giá này</span>
+          </div>
+          <div class="target-box tp-box">
+            <span class="target-title">Chốt Lời Dự Kiến (+15%)</span>
+            <span class="target-val font-mono stock-up">{{ newTrade.takeProfit | number }} đ</span>
+            <span class="target-sub">Tỷ lệ R:R = 1:2.14 đạt chuẩn</span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Chiến Lược Vào Lệnh</label>
+          <select class="form-control" [(ngModel)]="newTrade.strategy">
+            <option value="Breakout nền giá tích lũy">Breakout nền giá tích lũy (Canslim / VSA)</option>
+            <option value="Pullback hỗ trợ MA20 / MA50">Pullback kiểm tra hỗ trợ MA20 / MA50</option>
+            <option value="Sóng ngành đón đầu KQKD">Sóng ngành đón đầu kết quả kinh doanh</option>
+            <option value="Bắt đáy RSI phân kỳ dương">Bắt đáy RSI phân kỳ dương (Thanh khoản thấp)</option>
+            <option value="Tích sản dài hạn">Tích sản dài hạn doanh nghiệp đầu ngành</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Lý Do Vào Lệnh & Ghi Chú Kỷ Luật</label>
+          <textarea class="form-control" rows="2" [(ngModel)]="newTrade.reason" placeholder="Tại sao bạn mua mã này? Yếu tố kỹ thuật và cơ bản là gì?"></textarea>
+        </div>
+
+        <div class="total-estimated">
+          <span>Tổng giá trị lệnh ước tính:</span>
+          <strong class="font-mono text-main">{{ ((newTrade.price || 0) * (newTrade.quantity || 0)) | number:'1.0-0' }} đ</strong>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-outline" (click)="closeQuickTrade()">Hủy</button>
+        <button class="btn btn-primary" (click)="submitQuickTrade()">Xác Nhận Mở Vị Thế</button>
+      </div>
+    </div>
+  </div>
+</div>

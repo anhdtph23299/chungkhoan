@@ -1,0 +1,316 @@
+<div class="bot-container">
+  <!-- Toast Notification Message -->
+  <div *ngIf="actionMessage" class="action-toast" [class]="actionType">
+    <span class="toast-icon">
+      {{ actionType === 'success' ? '✅' : actionType === 'warning' ? '⚠️' : actionType === 'error' ? '🚨' : 'ℹ️' }}
+    </span>
+    <span class="toast-text">{{ actionMessage }}</span>
+  </div>
+
+  <!-- Hero Header Panel -->
+  <div class="bot-hero glass-card">
+    <div class="hero-left">
+      <div class="bot-badge-title">
+        <span class="ai-chip">QUANT AI CORE</span>
+        <span class="mode-pill" [class.paper]="status.mode === 'LIVE_PAPER_MONEY'">
+          {{ status.mode === 'LIVE_PAPER_MONEY' ? '⚡ LIVE PAPER TRADING (GIÁ THẬT HOSE)' : status.mode }}
+        </span>
+      </div>
+      <h1 class="bot-title">Robot Giao Dịch Tự Động Định Chế</h1>
+      <p class="bot-subtitle">
+        Hệ thống săn Alpha & Quản trị rủi ro 16 tầng tự động — Tự động nhận diện bứt phá, cắt lỗ dứt khoát & gặt tiền mặt mỗi ngày.
+      </p>
+    </div>
+
+    <div class="hero-right">
+      <div class="status-indicator-box" [class.active]="status.running" [class.inactive]="!status.running">
+        <div class="status-glow"></div>
+        <div class="status-meta">
+          <span class="status-label">TRẠNG THÁI ROBOT</span>
+          <span class="status-val">{{ status.running ? 'ĐANG CHẠY (RUNNING)' : 'TẠM DỪNG (STOPPED)' }}</span>
+        </div>
+      </div>
+
+      <div class="hero-actions">
+        <button class="btn btn-toggle" [class.btn-stop]="status.running" [class.btn-start]="!status.running" (click)="toggleBot()" [disabled]="isLoading">
+          <span class="btn-icon">{{ status.running ? '⏹️' : '▶️' }}</span>
+          <span>{{ status.running ? 'TẮT BOT' : 'BẬT BOT' }}</span>
+        </button>
+
+        <button class="btn btn-scan" (click)="triggerScanCycle()" [disabled]="isLoading" title="Quét tìm cơ hội và kiểm tra vị thế ngay lập tức">
+          <span class="btn-icon">⚡</span>
+          <span>QUÉT NGAY</span>
+        </button>
+
+        <button class="btn btn-reset" (click)="setupPaperTrading100M()" [disabled]="isLoading" title="Thiết lập lại tài khoản 100 triệu chuẩn bị cho Ngày 1 sáng mai">
+          <span class="btn-icon">🚀</span>
+          <span>KHỞI TẠO 100M</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 Main Financial KPI Cards -->
+  <div class="kpi-grid">
+    <!-- Card 1: Vốn Tài Khoản -->
+    <div class="kpi-card glass-card">
+      <div class="kpi-header">
+        <span class="kpi-label">VỐN KHỞI ĐIỂM (NAV)</span>
+        <span class="kpi-icon">💼</span>
+      </div>
+      <div class="kpi-value text-cyan">
+        {{ status.capital | number:'1.0-0' }} <span class="currency">đ</span>
+      </div>
+      <div class="kpi-footer">
+        <span class="badge-subtle">Paper Money (Giá thật sàn)</span>
+        <span class="sub-text">Sẵn sàng Ngày 1 sáng mai (09:00)</span>
+      </div>
+    </div>
+
+    <!-- Card 2: Lãi Chốt Hôm Nay -->
+    <div class="kpi-card glass-card">
+      <div class="kpi-header">
+        <span class="kpi-label">LÃI THỰC HIỆN HÔM NAY</span>
+        <span class="kpi-icon">💰</span>
+      </div>
+      <div class="kpi-value" [class.text-green]="status.todayRealizedPnl >= 0" [class.text-red]="status.todayRealizedPnl < 0">
+        {{ status.todayRealizedPnl > 0 ? '+' : '' }}{{ status.todayRealizedPnl | number:'1.0-0' }} <span class="currency">đ</span>
+      </div>
+      <div class="kpi-footer">
+        <span class="sub-text">Đã chốt: <strong>{{ status.todayTradesCount }} lệnh</strong></span>
+        <span class="badge-pnl" [class.badge-profit]="status.todayRealizedPnl >= 0">
+          {{ status.todayRealizedPnl >= 0 ? 'BẢO TOÀN LỢI NHUẬN' : 'KIỂM SOÁT RỦI RO' }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Card 3: Mục Tiêu Kiếm Tiền Ngày -->
+    <div class="kpi-card glass-card">
+      <div class="kpi-header">
+        <span class="kpi-label">MỤC TIÊU NGÀY (+1.5%)</span>
+        <span class="kpi-icon">🎯</span>
+      </div>
+      <div class="kpi-value text-gold">
+        +{{ status.dailyTarget | number:'1.0-0' }} <span class="currency">đ</span>
+      </div>
+      <div class="progress-box">
+        <div class="progress-bar">
+          <div class="progress-fill" [style.width.%]="getTargetProgressPercent()"></div>
+        </div>
+        <div class="progress-label">
+          <span>Tiến độ ngày</span>
+          <span><strong>{{ getTargetProgressPercent() }}%</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 4: Cầu Chì Bảo Vệ Vốn Ngày -->
+    <div class="kpi-card glass-card">
+      <div class="kpi-header">
+        <span class="kpi-label">CẦU CHÌ BẢO VỆ VỐN (-2.0%)</span>
+        <span class="kpi-icon">🛡️</span>
+      </div>
+      <div class="kpi-value text-muted">
+        -{{ status.circuitBreakerLimit | number:'1.0-0' }} <span class="currency">đ</span>
+      </div>
+      <div class="kpi-footer">
+        <span class="status-shield safe">
+          <span class="shield-dot"></span> DEFCON-1: AN TOÀN
+        </span>
+        <span class="sub-text">Tự ngắt khi chạm đáy lỗ</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Grid Content: Positions & Live Terminal -->
+  <div class="bot-content-grid">
+    <!-- Left Section: Open Positions & Signals -->
+    <div class="content-left">
+      <!-- Open Positions Table -->
+      <div class="card glass-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="card-title-icon">📊</span>
+            <div>
+              <h2 class="card-title">Vị Thế Đang Mở (Live Positions)</h2>
+              <p class="card-subtitle">Theo dõi thời gian thực lãi/lỗ, Stop-Loss GARCH động và tình trạng T+2.5</p>
+            </div>
+          </div>
+          <span class="badge-count">{{ openPositions.length }} mã đang nắm</span>
+        </div>
+
+        <div class="table-responsive" *ngIf="openPositions.length > 0; else noPositions">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>CỔ PHIẾU</th>
+                <th>GIÁ VÀO</th>
+                <th>SỐ LƯỢNG</th>
+                <th>STOP LOSS (GARCH)</th>
+                <th>TAKE PROFIT</th>
+                <th>LÃI / LỖ (PNL)</th>
+                <th>T+2.5</th>
+                <th>THAO TÁC</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let pos of openPositions" class="position-row">
+                <td class="symbol-col">
+                  <span class="stock-symbol">{{ pos.symbol }}</span>
+                  <span class="stock-strategy">{{ pos.strategy }}</span>
+                </td>
+                <td class="mono-num">{{ pos.price | number:'1.0-0' }} đ</td>
+                <td class="mono-num font-bold">{{ pos.quantity | number }} cp</td>
+                <td class="mono-num text-red">{{ pos.stopLoss ? (pos.stopLoss | number:'1.0-0') : '--' }} đ</td>
+                <td class="mono-num text-green">{{ pos.takeProfit ? (pos.takeProfit | number:'1.0-0') : '--' }} đ</td>
+                <td class="mono-num pnl-col" [class.text-green]="(pos.pnl || 0) >= 0" [class.text-red]="(pos.pnl || 0) < 0">
+                  <div class="pnl-main font-bold">
+                    {{ (pos.pnl || 0) > 0 ? '+' : '' }}{{ (pos.pnl || 0) | number:'1.0-0' }} đ
+                  </div>
+                  <div class="pnl-pct">
+                    ({{ (pos.pnlPercent || 0) > 0 ? '+' : '' }}{{ (pos.pnlPercent || 0) | number:'1.2-2' }}%)
+                  </div>
+                </td>
+                <td>
+                  <span class="badge-t25" [class.locked]="isT25Locked(pos)" [class.ready]="!isT25Locked(pos)">
+                    {{ isT25Locked(pos) ? '⏳ Chờ T+1' : '✅ Khả dụng bán' }}
+                  </span>
+                </td>
+                <td>
+                  <button class="btn btn-harvest" (click)="harvestProfit(pos.symbol)" [disabled]="isLoading" title="Gặt hái 50% tiền mặt và dời Stop-Loss hòa vốn">
+                    🌾 Chốt 50%
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <ng-template #noPositions>
+          <div class="empty-state">
+            <div class="empty-icon">🛡️</div>
+            <div class="empty-title">Chưa có vị thế mở nào</div>
+            <p class="empty-desc">
+              Bot đang trực canh ở chế độ an toàn. Vào sáng Thứ Hai lúc 9h15 khi có tín hiệu đạt chuẩn 16 tầng lọc, bot sẽ tự động giải ngân.
+            </p>
+          </div>
+        </ng-template>
+      </div>
+
+      <!-- Sector RRG Radar Preview -->
+      <div class="card glass-card" *ngIf="sectorRrg">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="card-title-icon">🧭</span>
+            <div>
+              <h2 class="card-title">Radar Xoay Tua RRG 7 Nhóm Ngành</h2>
+              <p class="card-subtitle">{{ sectorRrg.rotationVerdict }}</p>
+            </div>
+          </div>
+          <span class="benchmark-pill">Benchmark: {{ sectorRrg.benchmark }}</span>
+        </div>
+
+        <div class="rrg-quadrant-grid">
+          <div class="rrg-quadrant-box leading">
+            <div class="quad-header">
+              <span class="quad-name">🚀 LEADING (DẪN DẮT)</span>
+              <span class="quad-badge">{{ sectorRrg.leadingCount }}</span>
+            </div>
+            <div class="quad-sectors">{{ sectorRrg.topLeadingSectors || 'Đang cập nhật' }}</div>
+          </div>
+
+          <div class="rrg-quadrant-box weakening">
+            <div class="quad-header">
+              <span class="quad-name">⚠️ WEAKENING (SUY YẾU)</span>
+              <span class="quad-badge">{{ sectorRrg.weakeningCount }}</span>
+            </div>
+            <div class="quad-sectors">Khóa lợi nhuận trailing stop</div>
+          </div>
+
+          <div class="rrg-quadrant-box lagging">
+            <div class="quad-header">
+              <span class="quad-name">⛔ LAGGING (TỤT HẬU)</span>
+              <span class="quad-badge">{{ sectorRrg.laggingCount }}</span>
+            </div>
+            <div class="quad-sectors">{{ sectorRrg.toxicLaggingSectors || 'Hạn chế giải ngân' }}</div>
+          </div>
+
+          <div class="rrg-quadrant-box improving">
+            <div class="quad-header">
+              <span class="quad-name">🌱 IMPROVING (CẢI THIỆN)</span>
+              <span class="quad-badge">{{ sectorRrg.improvingCount }}</span>
+            </div>
+            <div class="quad-sectors">Theo dõi đảo chiều tích lũy</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Section: Real-time Live Terminal Console -->
+    <div class="content-right">
+      <div class="card glass-card terminal-card">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <div class="terminal-title">
+            <span class="terminal-icon">📟</span>
+            <span>NHẬT KÝ THỜI GIAN THỰC (LIVE TRACE CONSOLE)</span>
+          </div>
+          <span class="live-pulse">
+            <span class="pulse-ring"></span>
+            <span class="pulse-dot"></span> LIVE
+          </span>
+        </div>
+
+        <!-- Terminal Filter Tabs -->
+        <div class="terminal-filters">
+          <button class="filter-tab" [class.active]="selectedLogCategory === 'ALL'" (click)="setLogFilter('ALL')">
+            Tất cả
+          </button>
+          <button class="filter-tab" [class.active]="selectedLogCategory === 'TRADE'" (click)="setLogFilter('TRADE')">
+            ⚡ Lệnh GD
+          </button>
+          <button class="filter-tab" [class.active]="selectedLogCategory === 'RRG'" (click)="setLogFilter('RRG')">
+            🚀 RRG Alpha
+          </button>
+          <button class="filter-tab" [class.active]="selectedLogCategory === 'DEFCON'" (click)="setLogFilter('DEFCON')">
+            🛡️ DEFCON
+          </button>
+          <button class="filter-tab" [class.active]="selectedLogCategory === 'LIQUIDITY'" (click)="setLogFilter('LIQUIDITY')">
+            💧 Thanh khoản
+          </button>
+        </div>
+
+        <!-- Terminal Log Output Area -->
+        <div class="terminal-body" #logContainer>
+          <div *ngIf="filteredLogs.length === 0" class="terminal-empty">
+            Đang trực canh... Log sẽ tự động đẩy lên màn hình khi chu kỳ quét phát hiện sự kiện.
+          </div>
+
+          <div *ngFor="let logLine of filteredLogs" class="terminal-line"
+               [class.line-trade]="logLine.includes('MỞ VỊ THẾ') || logLine.includes('CHỐT LỜI') || logLine.includes('GẶT HÁI')"
+               [class.line-defcon]="logLine.includes('DEFCON') || logLine.includes('CẦU CHÌ')"
+               [class.line-rrg]="logLine.includes('RRG ALPHA') || logLine.includes('LEADER')"
+               [class.line-warning]="logLine.includes('BỎ QUA') || logLine.includes('BẪY') || logLine.includes('CẮT LỖ')">
+            <span class="line-marker">›</span>
+            <span class="line-text">{{ logLine }}</span>
+          </div>
+        </div>
+
+        <!-- Terminal Status Bar -->
+        <div class="terminal-footer">
+          <div class="footer-left">
+            <span class="clock-icon">🕒</span>
+            <span>Chu kỳ quét: Mỗi 30 giây</span>
+          </div>
+          <div class="footer-right">
+            <span>Hiển thị {{ filteredLogs.length }} / {{ status.recentLogs.length }} log</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

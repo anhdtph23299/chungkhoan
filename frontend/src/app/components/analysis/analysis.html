@@ -1,0 +1,130 @@
+<div class="analysis-container">
+  <!-- Header -->
+  <div class="analysis-header">
+    <div>
+      <h1 class="page-title">Phân Tích Kỹ Thuật & Tín Hiệu Định Lượng (Technical Scanner)</h1>
+      <p class="page-subtitle">Hệ thống nhận diện điểm mua Breakout và cảnh báo rủi ro theo phương pháp Canslim & VSA</p>
+    </div>
+  </div>
+
+  <!-- Ticker Quick Switch Bar -->
+  <div class="glass-card ticker-switch-bar">
+    <span class="bar-label">Mã Phân Tích:</span>
+    <div class="ticker-pills">
+      <button class="pill-btn" *ngFor="let s of scannedStocks" [class.active]="selectedSymbol === s.symbol" (click)="selectSymbol(s.symbol)">
+        <span class="pill-sym font-mono">{{ s.symbol }}</span>
+        <span class="pill-pct font-mono" [ngClass]="s.changePercent >= 0 ? 'stock-up' : 'stock-down'">
+          {{ s.changePercent >= 0 ? '+' : '' }}{{ s.changePercent | number:'1.2-2' }}%
+        </span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Analysis Grid -->
+  <div class="analysis-grid">
+    <!-- Left: Live Chart & Strategy Verdict -->
+    <div class="chart-section">
+      <!-- Live TradingView Chart Widget -->
+      <div class="glass-card chart-card">
+        <div class="chart-header">
+          <div class="chart-title-left">
+            <span class="symbol-tag">{{ currentStock.symbol }}</span>
+            <span class="company-name">{{ currentStock.name }}</span>
+            <span class="badge-exchange">{{ currentStock.exchange }}</span>
+          </div>
+          <div class="chart-price-right">
+            <span class="font-mono font-bold text-xl" [ngClass]="currentStock.changePercent >= 0 ? 'stock-up' : 'stock-down'">
+              {{ currentStock.price | number }} đ
+            </span>
+            <span class="pill" [ngClass]="currentStock.changePercent >= 0 ? 'pill-up' : 'pill-down'">
+              {{ currentStock.changePercent >= 0 ? '+' : '' }}{{ currentStock.changePercent | number:'1.2-2' }}%
+            </span>
+          </div>
+        </div>
+
+        <!-- TradingView Advanced Iframe -->
+        <div class="iframe-wrapper">
+          <iframe [src]="tradingViewWidgetUrl" frameborder="0" allowtransparency="true" scrolling="no" class="tv-iframe"></iframe>
+        </div>
+      </div>
+
+      <!-- Action Plan & Setup Parameters -->
+      <div class="glass-card setup-card">
+        <div class="setup-header">
+          <div class="setup-left">
+            <span class="status-badge" [ngClass]="'status-' + currentStock.status">
+              {{ currentStock.status === 'STRONG_BUY' ? '⚡ MUA MẠNH' : (currentStock.status === 'BUY' ? '✓ MUA' : (currentStock.status === 'WATCH' ? '👁️ THEO DÕI' : '⚠️ RỦI RO')) }}
+            </span>
+            <h3>Kế Hoạch Giao Dịch Chuẩn Hóa</h3>
+          </div>
+          <button class="btn btn-success" (click)="openOrderForCurrent()">
+            ⚡ Mở Lệnh Cho {{ currentStock.symbol }}
+          </button>
+        </div>
+
+        <div class="setup-grid">
+          <div class="setup-item">
+            <span class="si-label">Vùng Mua An Toàn:</span>
+            <strong class="font-mono text-main">{{ currentStock.buyZone }}</strong>
+          </div>
+          <div class="setup-item">
+            <span class="si-label">Cắt Lỗ Nghiêm Ngặt (-7%):</span>
+            <strong class="font-mono stock-down">{{ currentStock.stopLoss | number }} đ</strong>
+          </div>
+          <div class="setup-item">
+            <span class="si-label">Mục Tiêu Chốt Lời:</span>
+            <strong class="font-mono stock-up">{{ currentStock.target | number }} đ</strong>
+          </div>
+          <div class="setup-item">
+            <span class="si-label">Khối Lượng vs MA20:</span>
+            <strong class="font-mono text-main">{{ currentStock.volumeRatio }}x (Rất tích cực)</strong>
+          </div>
+        </div>
+
+        <div class="setup-note">
+          <span class="sn-icon">📌</span>
+          <p>{{ currentStock.signalTitle }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Technical Scanner Sidebar -->
+    <div class="scanner-section">
+      <div class="glass-card content-card">
+        <div class="card-head">
+          <div class="head-left">
+            <h2>Bộ Lọc Tín Hiệu Kỹ Thuật</h2>
+          </div>
+        </div>
+
+        <!-- Filter tabs -->
+        <div class="scanner-filters">
+          <button class="filter-chip" [class.active]="activeFilter === 'ALL'" (click)="filterSignals('ALL')">Tất Cả</button>
+          <button class="filter-chip" [class.active]="activeFilter === 'BREAKOUT_VOL'" (click)="filterSignals('BREAKOUT_VOL')">Breakout Vol</button>
+          <button class="filter-chip" [class.active]="activeFilter === 'GOLDEN_CROSS'" (click)="filterSignals('GOLDEN_CROSS')">Golden Cross</button>
+          <button class="filter-chip" [class.active]="activeFilter === 'WARNING_BEAR'" (click)="filterSignals('WARNING_BEAR')">Cảnh Báo</button>
+        </div>
+
+        <!-- Scanned Stocks List -->
+        <div class="scanned-list">
+          <div class="scan-item" *ngFor="let s of filteredStocks" [class.selected]="selectedSymbol === s.symbol" (click)="selectSymbol(s.symbol)">
+            <div class="si-top">
+              <span class="symbol-tag">{{ s.symbol }}</span>
+              <span class="font-mono font-bold" [ngClass]="s.changePercent >= 0 ? 'stock-up' : 'stock-down'">
+                {{ s.price | number }} ({{ s.changePercent >= 0 ? '+' : '' }}{{ s.changePercent | number:'1.2-2' }}%)
+              </span>
+            </div>
+
+            <div class="si-indicators">
+              <span class="ind-pill">RSI: <strong class="font-mono">{{ s.rsi | number:'1.1-1' }}</strong></span>
+              <span class="ind-pill">Vol: <strong class="font-mono">{{ s.volumeRatio }}x</strong></span>
+              <span class="ind-pill">MA20: <strong class="font-mono">{{ s.ma20 | number }}</strong></span>
+            </div>
+
+            <p class="si-desc">{{ s.signalTitle }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

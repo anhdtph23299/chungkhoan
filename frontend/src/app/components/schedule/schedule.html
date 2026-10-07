@@ -1,0 +1,182 @@
+<div class="schedule-container">
+  <!-- Header -->
+  <div class="schedule-header">
+    <div>
+      <h1 class="page-title">Lịch Trình Kỷ Luật & Lộ Trình Giao Dịch Có Lãi</h1>
+      <p class="page-subtitle">Khung giờ chuẩn từng phiên của thị trường chứng khoán Việt Nam và lịch sự kiện trọng yếu</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-outline" (click)="togglePromptBox()">
+        <span>🤖</span> Siêu Prompt Tự Động Hóa
+      </button>
+      <button class="btn btn-primary" (click)="showAddModal = true">
+        <span>+</span> Thêm Sự Kiện Lịch
+      </button>
+    </div>
+  </div>
+
+  <!-- Automated Trading Schedule Prompt Box (Expandable) -->
+  <div class="glass-card prompt-box" *ngIf="showPromptBox">
+    <div class="prompt-head">
+      <div class="prompt-title">
+        <span>⚡</span>
+        <strong>Siêu Prompt Tự Động Hóa Quá Trình "Trace Đến Khi Có Lãi Thì Thôi"</strong>
+      </div>
+      <button class="btn btn-sm btn-outline" (click)="showPromptBox = false">Đóng</button>
+    </div>
+    <div class="prompt-content">
+      <p class="text-secondary text-sm">
+        Bạn có thể sử dụng cấu trúc prompt này với trợ lý AI hoặc lên lịch định kỳ bằng <code>/schedule</code> để liên tục tối ưu danh mục:
+      </p>
+      <div class="code-block font-mono">
+[HỆ THỐNG TRACE & QUẢN TRỊ DANH MỤC CHỨNG KHOÁN VIỆT NAM - MỤC TIÊU CÓ LÃI BỀN VỮNG]
+Vai trò: Bạn là Chuyên gia Quản trị Danh mục và Kỷ luật Giao dịch Chứng khoán Việt Nam (VN-Index/VN30).
+Nhiệm vụ hàng ngày:
+1. Lúc 08:30: Quét tin tức vĩ mô, Dow Jones, DXY, giá dầu, cập nhật danh sách cổ phiếu trong Watchlist đạt điều kiện tích lũy nền giá.
+2. Lúc 11:30: Đánh giá thanh khoản phiên sáng, cảnh báo các mã vi phạm hỗ trợ hoặc có dòng tiền gom.
+3. Lúc 14:15 - 14:30: Quan sát 15 phút vàng cuối phiên, đưa ra khuyến nghị:
+   - Nếu cổ phiếu chạm ngưỡng cắt lỗ 7%: Dứt khoát đóng vị thế, không cho phép gồng lỗ.
+   - Nếu cổ phiếu đạt mục tiêu chốt lời (R:R >= 2:1): Đề xuất hiện thực hóa 50% lợi nhuận và nâng trailing stop.
+4. Cuối ngày lúc 15:30: Tự động ghi chép nhật ký, tính toán Win Rate, Profit Factor, và rút ra bài học cho phiên kế tiếp.
+Kiên trì thực hiện cho đến khi tỷ lệ thắng đạt trên 60% và tài khoản sinh lời ổn định qua ít nhất 50 deal!
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 Columns Layout -->
+  <div class="schedule-body">
+    <!-- Left: Intraday Routine Timeline -->
+    <div class="body-routine">
+      <div class="glass-card content-card">
+        <div class="card-head">
+          <div class="head-left">
+            <h2>Khung Giờ Kỷ Luật Trong Ngày (Intraday Routine)</h2>
+          </div>
+          <span class="pill pill-primary">Thị Trường VN (HOSE / HNX)</span>
+        </div>
+
+        <div class="timeline-list">
+          <div class="timeline-item" *ngFor="let slot of dailyRoutines" [class.current-slot]="slot.isCurrent">
+            <div class="tl-left">
+              <span class="tl-time font-mono">{{ slot.time }}</span>
+              <span class="pill" [ngClass]="slot.badgeClass">{{ slot.badge }}</span>
+              <span class="live-dot" *ngIf="slot.isCurrent" title="Đang trong khung giờ này"></span>
+            </div>
+
+            <div class="tl-content">
+              <h3 class="tl-title">{{ slot.phase }}</h3>
+              <p class="tl-action">{{ slot.action }}</p>
+              <div class="tl-rule">
+                <span class="rule-icon">⚠️</span>
+                <span>{{ slot.rule }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Event Calendar & Trading Progression Roadmap -->
+    <div class="body-events">
+      <!-- Market Calendar Events -->
+      <div class="glass-card content-card">
+        <div class="card-head">
+          <div class="head-left">
+            <h2>Sự Kiện Trọng Yếu Của Thị Trường</h2>
+          </div>
+        </div>
+
+        <div class="events-list">
+          <div class="event-card" *ngFor="let ev of events">
+            <div class="event-top">
+              <span class="pill pill-purple">{{ ev.eventType }}</span>
+              <span class="event-date font-mono">📅 {{ ev.eventDate }}</span>
+            </div>
+            <strong class="event-title">{{ ev.title }}</strong>
+            <p class="event-notes">{{ ev.notes }}</p>
+            <div class="event-foot" *ngIf="ev.id">
+              <button class="btn-text-del" (click)="removeEvent(ev.id)">Xóa sự kiện</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Roadmap To Real Money Success -->
+      <div class="glass-card progression-card">
+        <div class="card-head">
+          <h2>Lộ Trình Đạt Lợi Nhuận Thật</h2>
+        </div>
+
+        <div class="progression-steps">
+          <div class="p-step active-step">
+            <div class="p-num">1</div>
+            <div class="p-content">
+              <strong>Tích Lũy 50 Lệnh Kỷ Luật (Tài khoản thử nghiệm)</strong>
+              <p>Mục tiêu: Đạt tỷ lệ thắng Win Rate ≥ 50%, Tỷ lệ Lợi nhuận/Rủi ro R:R ≥ 2.0 và 100% tuân thủ cắt lỗ 7%.</p>
+            </div>
+          </div>
+
+          <div class="p-step">
+            <div class="p-num">2</div>
+            <div class="p-content">
+              <strong>Thử Nghiệm Tiền Thật Vốn Nhỏ (10 - 20 Triệu)</strong>
+              <p>Mục tiêu: Làm quen cảm giác nhìn tiền thật tăng/giảm trong tài khoản chứng khoán mà không bị cảm xúc chi phối.</p>
+            </div>
+          </div>
+
+          <div class="p-step">
+            <div class="p-num">3</div>
+            <div class="p-content">
+              <strong>Nâng Quy Mô Vốn Khi Có Lãi Đều Đặn</strong>
+              <p>Chỉ nạp thêm tiền khi danh mục đã sinh lời tự nhiên liên tục 2 quý. Lấy mỡ nó rán nó để an toàn tài chính.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Event Modal -->
+  <div class="modal-overlay" *ngIf="showAddModal" (click)="showAddModal = false">
+    <div class="modal-card glass-card" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3>+ Thêm Sự Kiện Vào Lịch Theo Dõi</h3>
+        <button class="modal-close" (click)="showAddModal = false">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Tên Sự Kiện Thị Trường</label>
+          <input type="text" class="form-control" [(ngModel)]="newEvent.title" placeholder="VD: Đáo hạn phái sinh tháng 11">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Ngày Diễn Ra</label>
+            <input type="date" class="form-control" [(ngModel)]="newEvent.eventDate">
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Loại Sự Kiện</label>
+            <select class="form-control" [(ngModel)]="newEvent.eventType">
+              <option value="Đáo Hạn Phái Sinh">Đáo Hạn Phái Sinh</option>
+              <option value="Cơ Cấu Quỹ ETF">Cơ Cấu Quỹ ETF</option>
+              <option value="Báo Cáo Tài Chính">Báo Cáo Tài Chính (KQKD)</option>
+              <option value="Họp Lãi Suất FED">Họp Lãi Suất FED</option>
+              <option value="Đại Hội Cổ Đông">Đại Hội Cổ Đông / Chia Cổ Tức</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Ghi Chú Kế Hoạch Ứng Phó</label>
+          <textarea class="form-control" rows="3" [(ngModel)]="newEvent.notes" placeholder="Cần chú ý nhóm cổ phiếu nào? Chiến lược hành động là gì?"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-outline" (click)="showAddModal = false">Hủy</button>
+        <button class="btn btn-primary" (click)="saveEvent()">Lưu Sự Kiện</button>
+      </div>
+    </div>
+  </div>
+</div>

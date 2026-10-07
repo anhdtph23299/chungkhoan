@@ -1,0 +1,188 @@
+<div class="journal-container">
+  <!-- Header -->
+  <div class="journal-header">
+    <div>
+      <h1 class="page-title">Nhật Ký Giao Dịch & Đánh Giá Kỷ Luật (Trading Journal)</h1>
+      <p class="page-subtitle">Chìa khóa chuyển hóa từ đầu cơ cảm tính sang giao dịch chuyên nghiệp có lãi</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-primary" (click)="openAddModal()">
+        <span>+</span> Thêm Ghi Chép Mới
+      </button>
+    </div>
+  </div>
+
+  <!-- Performance Metric Cards -->
+  <div class="metrics-grid">
+    <div class="glass-card metric-card">
+      <span class="metric-label">LỢI NHUẬN THỰC TẾ (REALIZED P&L)</span>
+      <div class="metric-value font-mono" [ngClass]="totalPnl >= 0 ? 'stock-up' : 'stock-down'">
+        {{ totalPnl >= 0 ? '+' : '' }}{{ totalPnl | number:'1.0-0' }} đ
+      </div>
+      <span class="text-xs text-secondary">Đã khóa lợi nhuận trên tài khoản</span>
+    </div>
+
+    <div class="glass-card metric-card">
+      <span class="metric-label">TỶ LỆ THẮNG (WIN RATE)</span>
+      <div class="metric-value font-mono stock-up">{{ winRate | number:'1.1-1' }}%</div>
+      <span class="text-xs text-secondary">{{ winCount }} thắng / {{ lossCount }} thua</span>
+    </div>
+
+    <div class="glass-card metric-card">
+      <span class="metric-label">PROFIT FACTOR (HỆ SỐ LÃI/LỖ)</span>
+      <div class="metric-value font-mono text-main">{{ profitFactor | number:'1.2-2' }}</div>
+      <span class="text-xs" [ngClass]="profitFactor >= 2 ? 'stock-up' : 'text-muted'">
+        {{ profitFactor >= 2 ? '✓ Đạt chuẩn chuyên nghiệp (>2.0)' : 'Cần tối ưu thêm' }}
+      </span>
+    </div>
+
+    <div class="glass-card metric-card">
+      <span class="metric-label">TỔNG SỐ LỆNH ĐÃ THỰC HIỆN</span>
+      <div class="metric-value font-mono">{{ entries.length }} <span class="currency">lệnh</span></div>
+      <span class="text-xs text-secondary">Mục tiêu: Đạt 50 lệnh kỷ luật trước khi tăng vốn</span>
+    </div>
+  </div>
+
+  <!-- Filter & Search Bar -->
+  <div class="filter-bar glass-card">
+    <div class="filter-tabs">
+      <button class="tab-btn" [class.active]="filterStatus === 'ALL'" (click)="setFilter('ALL')">
+        Tất Cả ({{ entries.length }})
+      </button>
+      <button class="tab-btn win-tab" [class.active]="filterStatus === 'WIN'" (click)="setFilter('WIN')">
+        Lệnh Thắng ({{ winCount }})
+      </button>
+      <button class="tab-btn loss-tab" [class.active]="filterStatus === 'LOSS'" (click)="setFilter('LOSS')">
+        Lệnh Thua / Cắt Lỗ ({{ lossCount }})
+      </button>
+    </div>
+
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" class="search-input" [(ngModel)]="searchQuery" (ngModelChange)="applyFilter()" placeholder="Tìm theo mã, chiến lược, bài học...">
+    </div>
+  </div>
+
+  <!-- Journal List Cards -->
+  <div class="journal-cards-list">
+    <div class="glass-card journal-card" *ngFor="let e of filteredEntries" [class.win-border]="e.pnl > 0" [class.loss-border]="e.pnl <= 0">
+      <div class="jc-head">
+        <div class="jc-left">
+          <span class="symbol-tag">{{ e.symbol }}</span>
+          <span class="pill pill-purple">{{ e.strategy }}</span>
+          <span class="dates-range font-mono text-muted text-xs">
+            📅 {{ e.tradeDate }} → {{ e.closeDate }}
+          </span>
+        </div>
+        <div class="jc-right">
+          <span class="font-mono font-bold text-lg" [ngClass]="e.pnl >= 0 ? 'stock-up' : 'stock-down'">
+            {{ e.pnl >= 0 ? '+' : '' }}{{ e.pnl | number:'1.0-0' }} đ
+          </span>
+          <span class="pill" [ngClass]="e.pnl >= 0 ? 'pill-up' : 'pill-down'">
+            {{ e.pnl >= 0 ? '▲ +' : '▼ ' }}{{ e.pnlPercent | number:'1.2-2' }}%
+          </span>
+        </div>
+      </div>
+
+      <div class="jc-stats-row">
+        <div class="stat-mini">
+          <span class="sm-label">Giá Mua:</span>
+          <strong class="font-mono">{{ e.buyPrice | number }} đ</strong>
+        </div>
+        <div class="stat-mini">
+          <span class="sm-label">Giá Bán:</span>
+          <strong class="font-mono">{{ e.sellPrice | number }} đ</strong>
+        </div>
+        <div class="stat-mini">
+          <span class="sm-label">Khối Lượng:</span>
+          <strong class="font-mono">{{ e.quantity | number }} cp</strong>
+        </div>
+        <div class="stat-mini">
+          <span class="sm-label">Tổng Giá Trị:</span>
+          <strong class="font-mono">{{ (e.buyPrice * e.quantity) | number:'1.0-0' }} đ</strong>
+        </div>
+      </div>
+
+      <div class="jc-notes-row">
+        <div class="note-block psychology-block">
+          <span class="nb-title">🧠 Trạng Thái Tâm Lý & Cảm Xúc:</span>
+          <p>{{ e.psychology }}</p>
+        </div>
+        <div class="note-block lesson-block">
+          <span class="nb-title">💡 Bài Học Rút Ra Cho Lần Tới:</span>
+          <p>{{ e.lessonLearned }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card empty-card" *ngIf="filteredEntries.length === 0">
+      <span class="empty-icon">📔</span>
+      <p>Chưa có ghi chép nào phù hợp. Hãy ghi lại bài học của từng lệnh giao dịch để không lặp lại sai lầm!</p>
+    </div>
+  </div>
+
+  <!-- Add Journal Modal -->
+  <div class="modal-overlay" *ngIf="showAddModal" (click)="showAddModal = false">
+    <div class="modal-card glass-card" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3>+ Thêm Bản Ghi Nhật Ký Giao Dịch</h3>
+        <button class="modal-close" (click)="showAddModal = false">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Mã Cổ Phiếu</label>
+            <input type="text" class="form-control font-mono uppercase" [(ngModel)]="newEntry.symbol" placeholder="VD: FPT">
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Khối Lượng Cổ Phiếu</label>
+            <input type="number" step="100" class="form-control font-mono" [(ngModel)]="newEntry.quantity">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Giá Mua Vào (VND)</label>
+            <input type="number" step="100" class="form-control font-mono" [(ngModel)]="newEntry.buyPrice">
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Giá Bán Ra (VND)</label>
+            <input type="number" step="100" class="form-control font-mono" [(ngModel)]="newEntry.sellPrice">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Ngày Mua Vào</label>
+            <input type="date" class="form-control" [(ngModel)]="newEntry.tradeDate">
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Ngày Bán Ra</label>
+            <input type="date" class="form-control" [(ngModel)]="newEntry.closeDate">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Chiến Lược Áp Dụng</label>
+          <input type="text" class="form-control" [(ngModel)]="newEntry.strategy" placeholder="VD: Breakout MA20 có khối lượng xác nhận">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Tâm Lý Khi Giao Dịch</label>
+          <input type="text" class="form-control" [(ngModel)]="newEntry.psychology" placeholder="VD: Tự tin / Có chút FOMO / Dứt khoát cắt lỗ...">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Bài Học Xương Máu Rút Ra</label>
+          <textarea class="form-control" rows="2" [(ngModel)]="newEntry.lessonLearned" placeholder="Điều gì làm tốt? Điều gì cần làm tốt hơn ở lệnh sau?"></textarea>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-outline" (click)="showAddModal = false">Hủy</button>
+        <button class="btn btn-primary" (click)="saveJournalEntry()">Lưu Vào Nhật Ký</button>
+      </div>
+    </div>
+  </div>
+</div>

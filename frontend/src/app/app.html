@@ -1,0 +1,38 @@
+<div class="app-layout" [class.sidebar-collapsed]="sidebarCollapsed">
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">
+        <span class="logo-icon">📈</span>
+        <span class="logo-text" *ngIf="!sidebarCollapsed">VN<span class="logo-accent">Trade</span></span>
+      </div>
+      <button class="sidebar-toggle" (click)="toggleSidebar()" [title]="sidebarCollapsed ? 'Mở rộng' : 'Thu gọn'">
+        {{ sidebarCollapsed ? '›' : '‹' }}
+      </button>
+    </div>
+
+    <ul class="nav-menu">
+      <li *ngFor="let item of navItems">
+        <a class="nav-item"
+           [routerLink]="item.path"
+           routerLinkActive="active"
+           [title]="item.label">
+          <span class="nav-icon">{{ item.icon }}</span>
+          <span class="nav-label" *ngIf="!sidebarCollapsed">{{ item.label }}</span>
+        </a>
+      </li>
+    </ul>
+
+    <div class="sidebar-footer" *ngIf="!sidebarCollapsed">
+      <div class="market-status" [class.open]="isMarketOpen" [class.closed]="!isMarketOpen">
+        <span class="status-dot"></span>
+        <span>{{ isMarketOpen ? 'Thị trường: Mở' : 'Thị trường: Đóng' }}</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <router-outlet></router-outlet>
+  </main>
+</div>

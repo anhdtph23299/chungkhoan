@@ -1,0 +1,39 @@
+# ==========================================
+# VNTrade Pro - Git Ignore Configuration
+# ==========================================
+
+# Backend build artifacts
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+backend/data/*.db
+backend/data/*.mv.db
+backend/data/*.trace.db
+backend/data/*.lock.db
+
+# Frontend build & dependencies
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/.angular/cache/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# IDE & Editor files
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+*.sublime-workspace
+
+# OS temporary files
+.DS_Store
+Thumbs.db
+*.log

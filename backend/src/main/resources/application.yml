@@ -1,0 +1,51 @@
+# ==========================================
+# VN Stock Tracker - Spring Boot Config
+# ==========================================
+
+spring:
+  application:
+    name: VNTrackBackend
+
+  # H2 Database (lưu vào file, không mất data khi restart)
+  datasource:
+    url: jdbc:h2:file:./data/vntrade_db;AUTO_SERVER=TRUE;NON_KEYWORDS=VALUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  # JPA / Hibernate
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+
+  # H2 Console (truy cập tại http://localhost:8080/h2-console)
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+      settings:
+        web-allow-others: false
+
+  # JSON config
+  jackson:
+    date-format: yyyy-MM-dd
+    serialization:
+      write-dates-as-timestamps: false
+
+# Server config
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+# Logging
+logging:
+  level:
+    com.vntrade: INFO
+    org.springframework.web: WARN
+    org.hibernate.SQL: WARN

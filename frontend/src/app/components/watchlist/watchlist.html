@@ -1,0 +1,216 @@
+<div class="watchlist-container">
+  <!-- Header Bar -->
+  <div class="watchlist-header">
+    <div>
+      <h1 class="page-title">Bảng Theo Dõi Cổ Phiếu Mục Tiêu (Watchlist)</h1>
+      <p class="page-subtitle">Sàng lọc cổ phiếu tiềm năng, canh điểm mua Pivot và quản lý rủi ro trước khi ra quyết định</p>
+    </div>
+    <div class="header-actions">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" class="search-input" [(ngModel)]="searchQuery" (ngModelChange)="filterItems()" placeholder="Tìm mã CP, ngành, ghi chú...">
+      </div>
+      <button class="btn btn-primary" (click)="openAddModal()">
+        <span>+</span> Thêm Mã Theo Dõi
+      </button>
+    </div>
+  </div>
+
+  <!-- Sector Tabs & Legend -->
+  <div class="sub-bar glass-card">
+    <div class="sector-tabs">
+      <button class="tab-btn" *ngFor="let s of sectors" [class.active]="selectedSector === s.id" (click)="setSector(s.id)">
+        {{ s.name }}
+      </button>
+    </div>
+
+    <div class="market-legend">
+      <span class="legend-item"><span class="legend-dot ceil"></span> Trần (+7%)</span>
+      <span class="legend-item"><span class="legend-dot floor"></span> Sàn (-7%)</span>
+      <span class="legend-item"><span class="legend-dot ref"></span> Tham chiếu</span>
+      <span class="legend-item"><span class="legend-dot up"></span> Tăng</span>
+      <span class="legend-item"><span class="legend-dot down"></span> Giảm</span>
+    </div>
+  </div>
+
+  <!-- Stock Board Table -->
+  <div class="glass-card table-card">
+    <div class="table-responsive">
+      <table class="data-table board-table">
+        <thead>
+          <tr>
+            <th>Mã CK</th>
+            <th>Sàn</th>
+            <th>Giá Hiện Tại</th>
+            <th>Thay Đổi</th>
+            <th>Khối Lượng</th>
+            <th>TC / Trần / Sàn</th>
+            <th>RSI(14)</th>
+            <th>Tín Hiệu Mua</th>
+            <th>Mục Tiêu (TP)</th>
+            <th>Cắt Lỗ (-7%)</th>
+            <th>Luận Điểm Đầu Tư</th>
+            <th class="text-right">Thao Tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let s of filteredItems">
+            <td>
+              <div class="symbol-col">
+                <span class="symbol-tag">{{ s.symbol }}</span>
+              </div>
+            </td>
+            <td><span class="badge-exchange">{{ s.exchange }}</span></td>
+            <td>
+              <span class="font-mono font-bold current-price" [ngClass]="s.change > 0 ? 'stock-up' : (s.change < 0 ? 'stock-down' : 'stock-ref')">
+                {{ s.currentPrice | number }}
+              </span>
+            </td>
+            <td>
+              <span class="pill" [ngClass]="s.change > 0 ? 'pill-up' : (s.change < 0 ? 'pill-down' : 'pill-ref')">
+                {{ s.change > 0 ? '+' : '' }}{{ s.change | number }} ({{ s.changePercent > 0 ? '+' : '' }}{{ s.changePercent | number:'1.2-2' }}%)
+              </span>
+            </td>
+            <td class="font-mono">{{ (s.volume / 1000) | number:'1.0-0' }}k</td>
+            <td>
+              <div class="three-prices font-mono">
+                <span class="stock-ref">{{ s.refPrice | number }}</span> /
+                <span class="stock-ceil">{{ s.ceilPrice | number }}</span> /
+                <span class="stock-floor">{{ s.floorPrice | number }}</span>
+              </div>
+            </td>
+            <td>
+              <div class="rsi-indicator">
+                <span class="rsi-val font-mono" [class.rsi-low]="s.rsi < 40" [class.rsi-high]="s.rsi > 70">{{ s.rsi | number:'1.1-1' }}</span>
+                <div class="rsi-bar">
+                  <div class="rsi-fill" [style.width.%]="s.rsi" [class.rsi-fill-low]="s.rsi < 40" [class.rsi-fill-high]="s.rsi > 70"></div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <span class="signal-tag" [ngClass]="'sig-' + s.signal">
+                {{ s.signal === 'BUY_ZONE' ? 'VÙNG MUA' : (s.signal === 'WATCH' ? 'QUAN SÁT' : 'CHỜ TÍN HIỆU') }}
+              </span>
+            </td>
+            <td class="font-mono stock-up font-bold">{{ s.targetPrice | number }}</td>
+            <td class="font-mono stock-down">{{ s.stopLoss | number }}</td>
+            <td>
+              <span class="stock-notes" [title]="s.notes">{{ s.notes }}</span>
+            </td>
+            <td class="text-right">
+              <div class="actions-group">
+                <button class="btn btn-sm btn-success" (click)="openTradeModal(s)">
+                  ⚡ Mua
+                </button>
+                <button class="btn btn-sm btn-outline text-muted" (click)="removeItem(s)" title="Xóa">
+                  ✕
+                </button>
+              </div>
+            </td>
+          </tr>
+          <tr *ngIf="filteredItems.length === 0">
+            <td colspan="12" class="text-center text-muted py-5">
+              Không tìm thấy mã nào. Hãy thử tìm từ khóa khác hoặc nhấn "+ Thêm Mã Theo Dõi".
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Add New Stock Modal -->
+  <div class="modal-overlay" *ngIf="showAddModal" (click)="showAddModal = false">
+    <div class="modal-card glass-card" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3>+ Thêm Cổ Phiếu Vào Danh Sách Theo Dõi</h3>
+        <button class="modal-close" (click)="showAddModal = false">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Mã Cổ Phiếu</label>
+            <input type="text" class="form-control font-mono uppercase" [(ngModel)]="newItem.symbol" placeholder="VD: MBB, VCB, DGC">
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Sàn Niêm Yết</label>
+            <select class="form-control" [(ngModel)]="newItem.exchange">
+              <option value="HOSE">HOSE (TP.HCM)</option>
+              <option value="HNX">HNX (Hà Nội)</option>
+              <option value="UPCOM">UPCOM</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Giá Mục Tiêu Chốt Lời (TP)</label>
+            <input type="number" class="form-control font-mono" [(ngModel)]="newItem.targetPrice" placeholder="VD: 32000">
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Giá Cắt Lỗ Tối Đa (SL 7%)</label>
+            <input type="number" class="form-control font-mono" [(ngModel)]="newItem.stopLoss" placeholder="VD: 25000">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Luận Điểm Đầu Tư & Ghi Chú Kỹ Thuật</label>
+          <textarea class="form-control" rows="3" [(ngModel)]="newItem.notes" placeholder="VD: Nền tích lũy phẳng 6 tuần, dòng tiền lớn vào phiên thứ 6, chờ vượt cản 28..."></textarea>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" (click)="showAddModal = false">Hủy</button>
+        <button class="btn btn-primary" (click)="saveNewItem()">Lưu Vào Watchlist</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Buy Trade Modal -->
+  <div class="modal-overlay" *ngIf="showTradeModal" (click)="showTradeModal = false">
+    <div class="modal-card glass-card" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3>⚡ Đặt Lệnh Mua: <span class="stock-up">{{ selectedStockToTrade?.symbol }}</span></h3>
+        <button class="modal-close" (click)="showTradeModal = false">✕</button>
+      </div>
+      <div class="modal-body" *ngIf="selectedStockToTrade">
+        <div class="trade-summary-card">
+          <div class="ts-row">
+            <span>Giá Khớp:</span>
+            <strong class="font-mono text-main">{{ selectedStockToTrade.currentPrice | number }} đ</strong>
+          </div>
+          <div class="ts-row">
+            <span>Cắt Lỗ Đề Xuất (7%):</span>
+            <strong class="font-mono stock-down">{{ selectedStockToTrade.stopLoss | number }} đ</strong>
+          </div>
+          <div class="ts-row">
+            <span>Mục Tiêu Lãi:</span>
+            <strong class="font-mono stock-up">{{ selectedStockToTrade.targetPrice | number }} đ</strong>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Số Lượng Cổ Phiếu Mua (Lô 100 cp)</label>
+          <input type="number" step="100" class="form-control font-mono" [(ngModel)]="tradeQuantity">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Chiến Lược Vào Lệnh</label>
+          <select class="form-control" [(ngModel)]="tradeStrategy">
+            <option value="Breakout nền giá tích lũy">Breakout nền giá tích lũy</option>
+            <option value="Pullback MA20 / MA50">Pullback kiểm tra hỗ trợ MA20 / MA50</option>
+            <option value="Bắt sóng kết quả kinh doanh">Bắt sóng kết quả kinh doanh</option>
+            <option value="Tích sản dài hạn">Tích sản dài hạn</option>
+          </select>
+        </div>
+
+        <div class="total-estimated">
+          <span>Tổng Giá Trị Giải Ngân:</span>
+          <strong class="font-mono stock-up text-lg">{{ (selectedStockToTrade.currentPrice * tradeQuantity) | number:'1.0-0' }} đ</strong>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-outline" (click)="showTradeModal = false">Hủy</button>
+        <button class="btn btn-success" (click)="executeTrade()">Xác Nhận Khớp Lệnh</button>
+      </div>
+    </div>
+  </div>
+</div>

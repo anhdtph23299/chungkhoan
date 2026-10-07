@@ -1,0 +1,227 @@
+<div class="portfolio-container">
+  <!-- Header -->
+  <div class="portfolio-header">
+    <div>
+      <h1 class="page-title">Quản Lý Danh Mục Đầu Tư (Portfolio)</h1>
+      <p class="page-subtitle">Kiểm soát tỷ trọng cổ/tiền, tối ưu hóa lợi nhuận và hạn chế rủi ro tập trung</p>
+    </div>
+  </div>
+
+  <!-- Asset Allocation & Cash Ratio Bar -->
+  <div class="glass-card allocation-card">
+    <div class="alloc-stats">
+      <div class="alloc-col">
+        <span class="text-secondary text-xs">TỔNG TÀI SẢN (NAV)</span>
+        <span class="font-mono font-bold text-xl">{{ totalNAV | number:'1.0-0' }} đ</span>
+      </div>
+      <div class="alloc-col">
+        <span class="text-secondary text-xs">GIÁ TRỊ CỔ PHIẾU</span>
+        <span class="font-mono font-bold text-lg stock-up">{{ totalHoldingsValue | number:'1.0-0' }} đ ({{ stockWeight | number:'1.1-1' }}%)</span>
+      </div>
+      <div class="alloc-col">
+        <span class="text-secondary text-xs">TIỀN MẶT PHÒNG THỦ</span>
+        <span class="font-mono font-bold text-lg text-main">{{ cashBalance | number:'1.0-0' }} đ ({{ cashWeight | number:'1.1-1' }}%)</span>
+      </div>
+      <div class="alloc-col">
+        <span class="text-secondary text-xs">LÃI / LỖ TẠM TÍNH</span>
+        <span class="font-mono font-bold text-lg" [ngClass]="summary.totalPnl >= 0 ? 'stock-up' : 'stock-down'">
+          {{ summary.totalPnl >= 0 ? '+' : '' }}{{ summary.totalPnl | number:'1.0-0' }} đ
+        </span>
+      </div>
+    </div>
+
+    <!-- Allocation Visual Bar -->
+    <div class="alloc-progress-container">
+      <div class="alloc-bar stock-bar" [style.width.%]="stockWeight" title="Cổ phiếu: {{ stockWeight | number:'1.1-1' }}%"></div>
+      <div class="alloc-bar cash-bar" [style.width.%]="cashWeight" title="Tiền mặt: {{ cashWeight | number:'1.1-1' }}%"></div>
+    </div>
+    <div class="alloc-labels">
+      <span class="dot-item"><span class="dot dot-stock"></span> Cổ phiếu đang giữ ({{ stockWeight | number:'1.1-1' }}%)</span>
+      <span class="dot-item"><span class="dot dot-cash"></span> Tiền mặt chờ cơ hội ({{ cashWeight | number:'1.1-1' }}%)</span>
+    </div>
+  </div>
+
+  <!-- Active Holdings Table -->
+  <div class="glass-card content-card">
+    <div class="card-head">
+      <div class="head-left">
+        <h2>Vị Thế Đang Nắm Giữ (Active Holdings)</h2>
+        <span class="badge-count">{{ openPositions.length }} mã</span>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Mã CP</th>
+            <th>Ngày Mua</th>
+            <th>Khối Lượng</th>
+            <th>Giá Mua TB</th>
+            <th>Giá Hiện Tại</th>
+            <th>Giá Trị TT</th>
+            <th>Lãi / Lỗ Tạm Tính</th>
+            <th>Tỷ Trọng</th>
+            <th>Cắt Lỗ (SL 7%)</th>
+            <th>Chốt Lời (TP)</th>
+            <th class="text-right">Thao Tác</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let pos of openPositions">
+            <td>
+              <span class="symbol-tag">{{ pos.symbol }}</span>
+            </td>
+            <td class="text-secondary font-mono">{{ pos.tradeDate }}</td>
+            <td class="font-mono">{{ pos.quantity | number }}</td>
+            <td class="font-mono">{{ pos.price | number }}</td>
+            <td class="font-mono font-bold">{{ (pos.price + (pos.pnl || 0) / (pos.quantity || 1)) | number }}</td>
+            <td class="font-mono">{{ (pos.price * pos.quantity + (pos.pnl || 0)) | number:'1.0-0' }} đ</td>
+            <td>
+              <span class="font-mono font-bold" [ngClass]="(pos.pnl || 0) >= 0 ? 'stock-up' : 'stock-down'">
+                {{ (pos.pnl || 0) >= 0 ? '+' : '' }}{{ pos.pnl | number:'1.0-0' }} đ
+              </span>
+              <div class="text-xs" [ngClass]="(pos.pnlPercent || 0) >= 0 ? 'stock-up' : 'stock-down'">
+                ({{ (pos.pnlPercent || 0) >= 0 ? '+' : '' }}{{ pos.pnlPercent | number:'1.2-2' }}%)
+              </div>
+            </td>
+            <td>
+              <div class="weight-col">
+                <span class="font-mono">{{ getHoldingWeight(pos) | number:'1.1-1' }}%</span>
+                <div class="weight-bar">
+                  <div class="weight-fill" [style.width.%]="getHoldingWeight(pos)"></div>
+                </div>
+              </div>
+            </td>
+            <td class="font-mono stock-down">{{ pos.stopLoss ? (pos.stopLoss | number) : '--' }}</td>
+            <td class="font-mono stock-up">{{ pos.takeProfit ? (pos.takeProfit | number) : '--' }}</td>
+            <td class="text-right">
+              <button class="btn btn-sm btn-outline btn-close-trade" (click)="openCloseModal(pos)">
+                Chốt Lệnh / Đóng
+              </button>
+            </td>
+          </tr>
+          <tr *ngIf="openPositions.length === 0">
+            <td colspan="11" class="text-center text-muted py-5">
+              Hiện không có vị thế nào mở. Kiểm tra Watchlist để tìm kiếm cơ hội!
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Closed Trades History -->
+  <div class="glass-card content-card">
+    <div class="card-head">
+      <div class="head-left">
+        <h2>Lịch Sử Các Lệnh Đã Chốt (Closed Positions)</h2>
+        <span class="badge-count">{{ closedPositions.length }} lệnh</span>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Mã CP</th>
+            <th>Ngày Vào</th>
+            <th>Ngày Ra</th>
+            <th>Khối Lượng</th>
+            <th>Giá Mua</th>
+            <th>Giá Bán</th>
+            <th>Lợi Nhuận Thực Tế (P&L)</th>
+            <th>Chiến Lược & Lý Do Bán</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let c of closedPositions">
+            <td><span class="symbol-tag">{{ c.symbol }}</span></td>
+            <td class="font-mono text-secondary">{{ c.tradeDate }}</td>
+            <td class="font-mono text-secondary">{{ c.closeDate }}</td>
+            <td class="font-mono">{{ c.closeQuantity || c.quantity | number }}</td>
+            <td class="font-mono">{{ c.price | number }}</td>
+            <td class="font-mono font-bold">{{ c.closePrice | number }}</td>
+            <td>
+              <span class="font-mono font-bold" [ngClass]="(c.pnl || 0) >= 0 ? 'stock-up' : 'stock-down'">
+                {{ (c.pnl || 0) >= 0 ? '+' : '' }}{{ c.pnl | number:'1.0-0' }} đ
+              </span>
+              <div class="text-xs" [ngClass]="(c.pnlPercent || 0) >= 0 ? 'stock-up' : 'stock-down'">
+                ({{ (c.pnlPercent || 0) >= 0 ? '+' : '' }}{{ c.pnlPercent | number:'1.2-2' }}%)
+              </div>
+            </td>
+            <td>
+              <span class="reason-text">{{ c.reason || c.strategy }}</span>
+            </td>
+          </tr>
+          <tr *ngIf="closedPositions.length === 0">
+            <td colspan="8" class="text-center text-muted py-4">Chưa có lịch sử lệnh đóng.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Modal Đóng Vị Thế -->
+  <div class="modal-overlay" *ngIf="showCloseModal" (click)="showCloseModal = false">
+    <div class="modal-card glass-card" (click)="$event.stopPropagation()">
+      <div class="modal-head">
+        <h3>🔒 Chốt Vị Thế: <span class="stock-up">{{ selectedTradeToClose?.symbol }}</span></h3>
+        <button class="modal-close" (click)="showCloseModal = false">✕</button>
+      </div>
+
+      <div class="modal-body" *ngIf="selectedTradeToClose">
+        <div class="trade-summary-card">
+          <div class="ts-row">
+            <span>Giá Vốn Mua Vào:</span>
+            <strong class="font-mono">{{ selectedTradeToClose.price | number }} đ</strong>
+          </div>
+          <div class="ts-row">
+            <span>Số Lượng Đang Nắm Giữ:</span>
+            <strong class="font-mono">{{ selectedTradeToClose.quantity | number }} cp</strong>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Giá Bán Thực Tế (VND)</label>
+            <input type="number" step="100" class="form-control font-mono" [(ngModel)]="closeData.closePrice">
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Ngày Khớp Bán</label>
+            <input type="date" class="form-control" [(ngModel)]="closeData.closeDate">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Lý Do Đóng Vị Thế</label>
+          <select class="form-control" [(ngModel)]="closeData.reason">
+            <option value="Đạt mục tiêu chốt lời 15%">Đạt mục tiêu chốt lời kế hoạch (Take Profit)</option>
+            <option value="Chạm ngưỡng cắt lỗ 7%">Chạm ngưỡng cắt lỗ bảo vệ vốn (Stop Loss 7%)</option>
+            <option value="Tái cơ cấu sang mã tiềm năng hơn">Tái cơ cấu sang mã tiềm năng hơn</option>
+            <option value="Thị trường chung xuất hiện phiên phân phối">Thị trường chung xuất hiện phiên phân phối</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Ghi Chú Nhật Ký & Bài Học Kinh Nghiệm</label>
+          <textarea class="form-control" rows="2" [(ngModel)]="closeData.notes" placeholder="Ghi nhận tâm lý và kỷ luật..."></textarea>
+        </div>
+
+        <!-- Calculated PnL Preview -->
+        <div class="total-estimated" [ngClass]="(closeData.closePrice - selectedTradeToClose.price) >= 0 ? 'est-profit' : 'est-loss'">
+          <span>Lãi / Lỗ Dự Tính:</span>
+          <strong class="font-mono font-bold">
+            {{ ((closeData.closePrice - selectedTradeToClose.price) * closeData.closeQuantity) | number:'1.0-0' }} đ
+            ({{ (((closeData.closePrice - selectedTradeToClose.price) / selectedTradeToClose.price) * 100) | number:'1.2-2' }}%)
+          </strong>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button class="btn btn-outline" (click)="showCloseModal = false">Hủy</button>
+        <button class="btn btn-primary" (click)="confirmCloseTrade()">Xác Nhận Đóng Lệnh</button>
+      </div>
+    </div>
+  </div>
+</div>

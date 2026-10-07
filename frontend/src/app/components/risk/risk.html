@@ -1,0 +1,199 @@
+<div class="risk-container">
+  <!-- Header -->
+  <div class="risk-header">
+    <div>
+      <h1 class="page-title">Quản Trị Rủi Ro & Định Lượng Khối Lượng (Risk Management)</h1>
+      <p class="page-subtitle">Công thức toán học của các quỹ chuyên nghiệp để không bao giờ cháy tài khoản và luôn có lãi</p>
+    </div>
+  </div>
+
+  <!-- Calculator & Live Sizing Results -->
+  <div class="calculator-grid">
+    <!-- Left: Inputs -->
+    <div class="glass-card calc-card">
+      <div class="card-head">
+        <h2>🧮 Máy Tính Khối Lượng Vào Lệnh (Position Sizer)</h2>
+        <span class="pill pill-primary">Quy Tắc 2% NAV</span>
+      </div>
+
+      <div class="calc-inputs">
+        <div class="form-group">
+          <label class="form-label">Tổng Vốn Tài Khoản Của Bạn (NAV)</label>
+          <div class="input-with-suffix">
+            <input type="number" step="1000000" class="form-control font-mono" [(ngModel)]="accountCapital">
+            <span class="suffix">VNĐ</span>
+          </div>
+          <span class="input-hint">Vốn thực tế bạn sẵn sàng phân bổ vào chứng khoán</span>
+        </div>
+
+        <div class="form-group">
+          <div class="label-with-badge">
+            <label class="form-label">Mức Rủi Ro Tối Đa Cho 1 Deal</label>
+            <span class="pill pill-purple">{{ maxRiskPercent }}% NAV ({{ maxAllowedLossAmount | number:'1.0-0' }} đ)</span>
+          </div>
+          <input type="range" min="0.5" max="3" step="0.5" class="risk-slider" [(ngModel)]="maxRiskPercent">
+          <span class="input-hint">Khuyến nghị của các huyền thoại trading: Không quá 1% - 2% tài khoản cho mỗi lần vào lệnh</span>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label class="form-label">Giá Mua Dự Kiến (Entry)</label>
+            <div class="input-with-suffix">
+              <input type="number" step="100" class="form-control font-mono" [(ngModel)]="entryPrice" (ngModelChange)="updateByPercent()">
+              <span class="suffix">đ</span>
+            </div>
+          </div>
+          <div class="form-group flex-1">
+            <label class="form-label">Giá Cắt Lỗ (Stop Loss -7%)</label>
+            <div class="input-with-suffix">
+              <input type="number" step="100" class="form-control font-mono stock-down" [(ngModel)]="stopLossPrice">
+              <span class="suffix">đ</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Giá Chốt Lời Dự Kiến (Take Profit +15%)</label>
+          <div class="input-with-suffix">
+            <input type="number" step="100" class="form-control font-mono stock-up" [(ngModel)]="takeProfitPrice">
+            <span class="suffix">đ</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Computed Results & Verdict -->
+    <div class="glass-card result-card" [class.result-valid]="isRRAcceptable" [class.result-invalid]="!isRRAcceptable">
+      <div class="card-head">
+        <h2>Kết Quả Định Lượng Cho Lệnh</h2>
+        <span class="verdict-pill" [ngClass]="isRRAcceptable ? 'pill-up' : 'pill-down'">
+          {{ isRRAcceptable ? '✓ ĐẠT CHUẨN VÀO LỆNH' : '✕ RỦI RO CAO - NÊN HỦY' }}
+        </span>
+      </div>
+
+      <div class="shares-highlight">
+        <span class="sh-label">SỐ LƯỢNG CỔ PHIẾU ĐƯỢC PHÉP MUA:</span>
+        <div class="sh-number font-mono">{{ maxSharesToBuy | number }} <span class="sh-unit">cổ phiếu</span></div>
+        <span class="sh-sub">(Đã làm tròn xuống lô chuẩn 100 cp của sàn chứng khoán VN)</span>
+      </div>
+
+      <div class="stats-breakdown">
+        <div class="breakdown-item">
+          <span class="bi-label">Tỷ Lệ Lợi Nhuận / Rủi Ro (R:R):</span>
+          <span class="font-mono font-bold" [ngClass]="isRRAcceptable ? 'stock-up' : 'stock-down'">
+            1 : {{ riskRewardRatio | number:'1.2-2' }}
+          </span>
+        </div>
+
+        <div class="breakdown-item">
+          <span class="bi-label">Tổng Vốn Cần Giải Ngân:</span>
+          <span class="font-mono font-bold text-main">{{ totalCapitalRequired | number:'1.0-0' }} đ ({{ allocationPercent | number:'1.1-1' }}% NAV)</span>
+        </div>
+
+        <div class="breakdown-item">
+          <span class="bi-label">Khoảng Cách Cắt Lỗ:</span>
+          <span class="font-mono stock-down">-{{ stopLossPercent | number:'1.2-2' }}% (Mất {{ expectedLossAmount | number:'1.0-0' }} đ nếu dính SL)</span>
+        </div>
+
+        <div class="breakdown-item">
+          <span class="bi-label">Lợi Nhuận Tiềm Năng:</span>
+          <span class="font-mono stock-up">+{{ takeProfitPercent | number:'1.2-2' }}% (Lãi {{ expectedProfitAmount | number:'1.0-0' }} đ nếu đạt TP)</span>
+        </div>
+      </div>
+
+      <div class="risk-explanation">
+        <span class="re-icon">🛡️</span>
+        <p>
+          Bằng việc giới hạn rủi ro <strong>{{ maxRiskPercent }}%</strong> (tối đa {{ maxAllowedLossAmount | number:'1.0-0' }} đ),
+          ngay cả khi bạn thua liên tiếp 5 lệnh, tài khoản của bạn vẫn bảo toàn hơn <strong>90% số vốn</strong> để đón sóng lớn!
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drawdown Recovery Table & Real Money Rules -->
+  <div class="bottom-grid">
+    <!-- Drawdown Math -->
+    <div class="glass-card content-card">
+      <div class="card-head">
+        <h2>Toán Học Về Sự Sụt Giảm Vốn (Drawdown Math)</h2>
+        <span class="pill pill-down">Tại Sao Phải Cắt Lỗ 7%?</span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Khi Tài Khoản Lỗ</th>
+              <th>Mức Lãi Cần Đạt Để Hòa Vốn</th>
+              <th>Độ Khó Phục Hồi</th>
+              <th>Lời Khuyên</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let d of drawdownData" [class.safe-row]="d.safe" [class.danger-row]="!d.safe">
+              <td class="font-mono font-bold stock-down">-{{ d.loss }}%</td>
+              <td class="font-mono font-bold" [ngClass]="d.safe ? 'stock-up' : 'stock-down'">+{{ d.gainNeeded }}%</td>
+              <td>
+                <span class="pill" [ngClass]="d.safe ? 'pill-up' : 'pill-down'">
+                  {{ d.safe ? 'Bình thường' : 'Cực kỳ khó' }}
+                </span>
+              </td>
+              <td class="text-secondary text-sm">{{ d.note }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 5 Rules For Real Money -->
+    <div class="glass-card content-card">
+      <div class="card-head">
+        <h2>5 Nguyên Tắc Bất Biến Khi Chơi Tiền Thật</h2>
+        <span class="pill pill-purple">Dành Cho F0 & Bán Chuyên</span>
+      </div>
+
+      <div class="rules-list">
+        <div class="rule-item">
+          <span class="rule-badge">1</span>
+          <div>
+            <strong>Không bao giờ tất tay vào 1 mã cổ phiếu</strong>
+            <p>Tối đa chia vốn vào 3-4 mã thuộc 2-3 ngành khác nhau để phân tán rủi ro thiên nga đen.</p>
+          </div>
+        </div>
+
+        <div class="rule-item">
+          <span class="rule-badge">2</span>
+          <div>
+            <strong>Nói KHÔNG với Margin (Đòn bẩy tài chính)</strong>
+            <p>Đòn bẩy biến một khoản lỗ bình thường thành cháy tài khoản khi bị Call Margin ép bán ở đáy.</p>
+          </div>
+        </div>
+
+        <div class="rule-item">
+          <span class="rule-badge">3</span>
+          <div>
+            <strong>Không trung bình giá xuống cổ phiếu rớt</strong>
+            <p>Chỉ mua gia tăng khi cổ phiếu đang chạy đúng hướng và đang có lãi.</p>
+          </div>
+        </div>
+
+        <div class="rule-item">
+          <span class="rule-badge">4</span>
+          <div>
+            <strong>Quan sát sau 14h15 trước khi đặt lệnh mua mới</strong>
+            <p>80% biến động thật của chứng khoán Việt Nam diễn ra trong 15 phút cuối phiên và phiên ATC.</p>
+          </div>
+        </div>
+
+        <div class="rule-item">
+          <span class="rule-badge">5</span>
+          <div>
+            <strong>Cắt lỗ trước, chốt lời sau</strong>
+            <p>Đặt trước lệnh Stop Loss ngay khi vừa khớp mua để tâm lý không thể can thiệp trì hoãn.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
