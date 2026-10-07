@@ -16,7 +16,7 @@
 
 ### 2. Kéo Code (Git Clone)
 ```bash
-git clone <URL_REPOSITORY_CUA_BAN>
+git clone https://github.com/anhdtph23299/chungkhoan.git
 cd chungkhoan
 ```
 
