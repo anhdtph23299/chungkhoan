@@ -1,7 +1,7 @@
-import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { BotService, BotStatus, RrgData, SignalScreener } from '../../services/bot';
+import { BotService, BotStatus, RrgData, SignalScreener, BreakoutItem, PerformanceComparison, PreMarketSentiment, OversoldBounce } from '../../services/bot';
 import { TradeService, Trade } from '../../services/trade';
 import { Subscription } from 'rxjs';
 
@@ -30,6 +30,11 @@ export class BotComponent implements OnInit, OnDestroy {
   closedTrades: Trade[] = [];
   signals: SignalScreener[] = [];
   sectorRrg?: RrgData;
+  breakoutQueue: BreakoutItem[] = [];
+  comparison?: PerformanceComparison;
+  preMarket?: PreMarketSentiment;
+  oversoldBounce?: OversoldBounce;
+  activeTab: 'OVERVIEW' | 'RADAR' | 'BOUNCE' = 'OVERVIEW';
 
   selectedLogCategory: 'ALL' | 'BOT' | 'DEFCON' | 'RRG' | 'LIQUIDITY' | 'TRADE' = 'ALL';
   filteredLogs: string[] = [];
@@ -43,7 +48,8 @@ export class BotComponent implements OnInit, OnDestroy {
 
   constructor(
     private botService: BotService,
-    private tradeService: TradeService
+    private tradeService: TradeService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -64,9 +70,11 @@ export class BotComponent implements OnInit, OnDestroy {
           if (event.data.realizedPnl !== undefined) this.status.todayRealizedPnl = event.data.realizedPnl;
           if (event.data.tradesCount !== undefined) this.status.todayTradesCount = event.data.tradesCount;
           this.applyLogFilter();
+          this.cdr.markForCheck();
         } else if (event.event === 'BOT_TRADE_OPENED' || event.event === 'BOT_TRADE_CLOSED') {
           this.loadPositions();
           this.loadStatusOnly();
+          this.cdr.markForCheck();
         }
       },
       error: (err) => console.debug('SSE stream error', err)
@@ -83,15 +91,68 @@ export class BotComponent implements OnInit, OnDestroy {
     this.loadPositions();
     this.loadSignals();
     this.loadRrgRadar();
+    this.loadBreakoutQueue();
+    this.loadComparison();
+    this.loadPreMarketSentiment();
+    this.loadOversoldBounce();
+  }
+
+  setActiveTab(tab: 'OVERVIEW' | 'RADAR' | 'BOUNCE'): void {
+    this.activeTab = tab;
+    this.cdr.markForCheck();
+  }
+
+  loadPreMarketSentiment(): void {
+    this.botService.getPreMarketSentiment().subscribe({
+      next: (res) => {
+        this.preMarket = res;
+        this.cdr.markForCheck();
+      },
+      error: (e) => console.debug('Error getting pre-market sentiment', e)
+    });
+  }
+
+  loadOversoldBounce(): void {
+    this.botService.getOversoldBounce().subscribe({
+      next: (res) => {
+        this.oversoldBounce = res;
+        this.cdr.markForCheck();
+      },
+      error: (e) => console.debug('Error getting oversold bounce', e)
+    });
   }
 
   loadStatusOnly(): void {
     this.botService.getBotStatus().subscribe({
       next: (res) => {
         this.status = res;
+        if (res.breakoutQueue) {
+          this.breakoutQueue = res.breakoutQueue;
+        }
         this.applyLogFilter();
+        this.cdr.markForCheck();
       },
       error: (e) => console.debug('Error getting bot status', e)
+    });
+  }
+
+  loadBreakoutQueue(): void {
+    this.botService.getBreakoutQueue().subscribe({
+      next: (res) => {
+        this.breakoutQueue = res || [];
+        this.cdr.markForCheck();
+      },
+      error: (e) => console.debug('Error getting breakout queue', e)
+    });
+  }
+
+  loadComparison(): void {
+    this.botService.getPerformanceComparison().subscribe({
+      next: (res) => {
+        this.comparison = res;
+        this.cdr.markForCheck();
+      },
+      error: (e) => console.debug('Error getting performance comparison', e)
     });
   }
 
@@ -100,6 +161,7 @@ export class BotComponent implements OnInit, OnDestroy {
       next: (trades) => {
         this.openPositions = trades.filter(t => t.status === 'open');
         this.closedTrades = trades.filter(t => t.status === 'closed').slice(0, 10);
+        this.cdr.markForCheck();
       },
       error: (e) => console.debug('Error getting trades', e)
     });
@@ -107,14 +169,20 @@ export class BotComponent implements OnInit, OnDestroy {
 
   loadSignals(): void {
     this.botService.getBotSignals().subscribe({
-      next: (res) => this.signals = res.slice(0, 6),
+      next: (res) => {
+        this.signals = res.slice(0, 6);
+        this.cdr.markForCheck();
+      },
       error: (e) => console.debug('Error getting signals', e)
     });
   }
 
   loadRrgRadar(): void {
     this.botService.getSectorsRrg().subscribe({
-      next: (res) => this.sectorRrg = res,
+      next: (res) => {
+        this.sectorRrg = res;
+        this.cdr.markForCheck();
+      },
       error: (e) => console.debug('Error getting RRG', e)
     });
   }
@@ -122,16 +190,19 @@ export class BotComponent implements OnInit, OnDestroy {
   toggleBot(): void {
     const nextState = !this.status.running;
     this.isLoading = true;
+    this.cdr.markForCheck();
     this.botService.toggleBot(nextState).subscribe({
       next: (res) => {
         this.status.running = res.running;
         this.showMessage(res.message, res.running ? 'success' : 'warning');
         this.isLoading = false;
         this.loadStatusOnly();
+        this.cdr.markForCheck();
       },
       error: (err) => {
         this.showMessage('Lỗi khi bật/tắt bot!', 'error');
         this.isLoading = false;
+        this.cdr.markForCheck();
       }
     });
   }
@@ -141,47 +212,56 @@ export class BotComponent implements OnInit, OnDestroy {
       return;
     }
     this.isLoading = true;
+    this.cdr.markForCheck();
     this.botService.setupPaperTrading(100000000).subscribe({
       next: (res) => {
         this.showMessage('🚀 ' + res.message, 'success');
         this.isLoading = false;
         this.refreshAllData();
+        this.cdr.markForCheck();
       },
       error: (err) => {
         this.showMessage('Lỗi thiết lập paper trading!', 'error');
         this.isLoading = false;
+        this.cdr.markForCheck();
       }
     });
   }
 
   triggerScanCycle(): void {
     this.isLoading = true;
+    this.cdr.markForCheck();
     this.botService.triggerCycle().subscribe({
       next: (res) => {
         this.showMessage('⚡ Đã kích hoạt quét lệnh tức thì!', 'info');
         this.isLoading = false;
         this.loadStatusOnly();
         this.loadPositions();
+        this.cdr.markForCheck();
       },
       error: (err) => {
         this.showMessage('Lỗi quét lệnh!', 'error');
         this.isLoading = false;
+        this.cdr.markForCheck();
       }
     });
   }
 
   harvestProfit(symbol: string): void {
     this.isLoading = true;
+    this.cdr.markForCheck();
     this.botService.harvestProfit(symbol).subscribe({
       next: (res) => {
         this.showMessage(res.message || `Đã chốt lời 50% gặt tiền mặt cho ${symbol}!`, 'success');
         this.isLoading = false;
         this.loadPositions();
         this.loadStatusOnly();
+        this.cdr.markForCheck();
       },
       error: (err) => {
         this.showMessage('Lỗi chốt lời: ' + (err.error?.message || err.message), 'error');
         this.isLoading = false;
+        this.cdr.markForCheck();
       }
     });
   }
@@ -189,6 +269,7 @@ export class BotComponent implements OnInit, OnDestroy {
   setLogFilter(category: 'ALL' | 'BOT' | 'DEFCON' | 'RRG' | 'LIQUIDITY' | 'TRADE'): void {
     this.selectedLogCategory = category;
     this.applyLogFilter();
+    this.cdr.markForCheck();
   }
 
   applyLogFilter(): void {
@@ -231,8 +312,12 @@ export class BotComponent implements OnInit, OnDestroy {
   showMessage(msg: string, type: 'success' | 'warning' | 'info' | 'error'): void {
     this.actionMessage = msg;
     this.actionType = type;
+    this.cdr.markForCheck();
     setTimeout(() => {
-      if (this.actionMessage === msg) this.actionMessage = '';
+      if (this.actionMessage === msg) {
+        this.actionMessage = '';
+        this.cdr.markForCheck();
+      }
     }, 6000);
   }
 }

@@ -40,6 +40,7 @@ public class RiskService {
             case "SSI", "VND", "VIX", "HCM", "VCI", "SHS" -> "CHỨNG KHOÁN";
             case "MWG", "MSN", "PNJ", "FRT" -> "BÁN LẺ & TIÊU DÙNG";
             case "VHM", "VIC", "VRE", "KBC", "NVL", "PDR" -> "BẤT ĐỘNG SẢN";
+            case "PLX", "BSR", "GAS", "PVD", "PVS", "PVT" -> "DẦU KHÍ & NĂNG LƯỢNG";
             default -> "KHÁC";
         };
     }

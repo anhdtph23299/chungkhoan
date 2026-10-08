@@ -41,13 +41,19 @@ public class BotController {
             "todayTradesCount", botService.getTodayTradesCount(),
             "dailyTarget", botService.getDailyProfitTarget(),
             "circuitBreakerLimit", botService.getDailyMaxLossLimit(),
-            "recentLogs", botService.getBotLogs()
+            "recentLogs", botService.getBotLogs(),
+            "breakoutQueue", botService.getBreakoutWatchlist()
         ));
     }
 
-    @PostMapping("/setup-paper-trading")
+    @GetMapping("/breakout-queue")
+    public ResponseEntity<List<Map<String, Object>>> getBreakoutQueue() {
+        return ResponseEntity.ok(botService.getBreakoutWatchlist());
+    }
+
+    @PostMapping({"/setup-paper-trading", "/setup-paper"})
     public ResponseEntity<Map<String, Object>> setupPaperTrading(
-            @RequestParam(required = false, defaultValue = "20000000") BigDecimal capital) {
+            @RequestParam(required = false, defaultValue = "100000000") BigDecimal capital) {
         botService.setupPaperTrading(capital);
         return ResponseEntity.ok(Map.of(
             "status", "READY_FOR_LIVE_TRACE",
@@ -57,6 +63,36 @@ public class BotController {
             "circuitBreaker", botService.getDailyMaxLossLimit(),
             "running", botService.isRunning(),
             "message", String.format("🚀 Đã thiết lập hoàn tất tài khoản Live Trace %,.0f đ! Bot đã sẵn sàng trực canh phiên giao dịch Ngày 1 sáng mai (09:00).", botService.getAccountCapital())
+        ));
+    }
+
+    @PostMapping("/start")
+    public ResponseEntity<Map<String, Object>> startBot() {
+        botService.setRunning(true);
+        return ResponseEntity.ok(Map.of(
+            "running", botService.isRunning(),
+            "message", "Bot đã kích hoạt chế độ tự động săn lệnh!"
+        ));
+    }
+
+    @PostMapping("/stop")
+    public ResponseEntity<Map<String, Object>> stopBot() {
+        botService.setRunning(false);
+        return ResponseEntity.ok(Map.of(
+            "running", botService.isRunning(),
+            "message", "Bot đã tạm dừng."
+        ));
+    }
+
+    @PostMapping("/reset-capital")
+    public ResponseEntity<Map<String, Object>> resetCapital(
+            @RequestParam(required = false, defaultValue = "100000000") BigDecimal capital) {
+        botService.setAccountCapital(capital);
+        return ResponseEntity.ok(Map.of(
+            "capital", botService.getAccountCapital(),
+            "dailyTarget", botService.getDailyProfitTarget(),
+            "circuitBreaker", botService.getDailyMaxLossLimit(),
+            "message", "Đã cập nhật số vốn thành công!"
         ));
     }
 

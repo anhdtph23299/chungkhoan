@@ -27,36 +27,49 @@ timeline
 Phiên giao dịch Ngày 1 đánh dấu cột mốc chuyển dịch từ môi trường thử nghiệm sang chế độ **trực canh bám sát 100% thị trường thật**:
 
 ### ✅ Bước 1: Kiểm Tra Trạng Thái Hạ Tầng (08:30 - 08:45)
-1. Đảm bảo cổng Backend **8080** và cổng Frontend **4200** đang chạy ổn định.
+1. Đảm bảo cổng Backend **8085** và cổng Frontend **4200** đang chạy ổn định.
 2. Kiểm tra log khởi động:
    ```text
-   Hệ thống khởi động chế độ Live Trace Ngày 1: Không nạp lệnh mẫu giả, sẵn sàng chờ thị trường mở cửa!
+   Hệ thống khởi động chế độ Live Trace: Sẵn sàng trực canh phiên giao dịch!
    ```
 3. Truy cập nhanh kiểm tra trạng thái qua terminal:
    ```bash
-   curl.exe http://localhost:8080/api/bot/status
+   curl.exe http://localhost:8085/api/bot/status
    ```
    **Kỳ vọng:** `running: true`, `mode: "LIVE_PAPER_MONEY"`, `capital: 100000000`, `todayTradesCount: 0`.
 
-### ✅ Bước 2: Kiểm Tra Nguồn Dữ Liệu Báo Giá Thật (08:45 - 08:55)
+### ✅ Bước 2: Kiểm Tra Nguồn Dữ Liệu Báo Giá & Radar Tiền Trạm (08:45 - 08:55)
 1. Kiểm tra 4 chỉ số thị trường:
    ```bash
-   curl.exe http://localhost:8080/api/stock/market-indices
+   curl.exe http://localhost:8085/api/stock/market-indices
    ```
-   **Kỳ vọng:** Điểm số các chỉ số VN-INDEX, VN30, HNX-INDEX, UPCOM trả về dạng số thực (không null, không lỗi 404).
+2. Kiểm tra Radar Tiền Trạm & Đối Chiếu Giá Dầu Thế Giới:
+   ```bash
+   curl.exe http://localhost:8085/api/analysis/pre-market-sentiment
+   ```
+   **Kỳ vọng:** Trả về điểm số tâm lý mở cửa, tình trạng giá dầu Brent/WTI đêm qua và danh mục ưu tiên trực canh (PLX, PVT, BSR, FPT, HPG).
+3. Kiểm tra Radar Bắt Đáy Hoảng Loạn:
+   ```bash
+   curl.exe http://localhost:8085/api/analysis/oversold-bounce
+   ```
 
 ### ✅ Bước 3: Trực Canh Phiên Sáng (09:00 - 11:30)
 1. Mở giao diện tại tab **Robot Giao Dịch**: `http://localhost:4200/bot`.
 2. Giữ nguyên tab để theo dõi luồng thông báo thời gian thực qua Server-Sent Events (SSE).
 3. Khi đồng hồ điểm **09:00**, thị trường bước vào phiên ATO:
-   - Robot bắt đầu kích hoạt chu kỳ quét tìm điểm mua chuẩn định chế CANSLIM và VCP.
-   - Nếu phát hiện tường bán đè giá lớn hoặc bẫy kê mua ảo của lái (Spoofing), robot sẽ ghi nhận log cảnh báo và bỏ qua mã đó.
-   - Nếu mã cổ phiếu thỏa mãn toàn bộ 8 bộ lọc định lượng, robot tự động khớp lệnh mua với quy mô chuẩn được tính toán theo ATR và Half-Kelly.
+   - Bot trực canh quan sát, không mở lệnh bừa bãi trong ATO (09:00 - 09:15).
+   - Từ 09:15: Kích hoạt chu kỳ quét tìm điểm mua chuẩn định chế CANSLIM và VCP.
+   - Nếu cổ phiếu Alpha bị tường bán lớn đè giá, bot tự động xếp vào **Hàng Đợi Rình Mồi (Breakout Queue)** tại `http://localhost:8085/api/bot/breakout-queue`.
+   - Khi lực cầu tổ chức nuốt trọn tường bán (`scan.getPrice() >= wallPrice`), cơ chế **Breakout Wall Override** tự động giải ngân.
 
-### ✅ Bước 4: Giám Sát Phiên Chiều & Khóa T+2.5 (13:00 - 14:45)
-1. Vào buổi chiều, lượng cổ phiếu mua từ phiên T-2 chính thức về tài khoản của toàn thị trường, thường tạo ra các đợt rung lắc mạnh.
-2. Các lệnh robot vừa mua trong ngày hôm nay sẽ tự động được gán cờ **Khóa Thanh Khoản T+2.5** (chưa thể bán trong ngày).
-3. Đến phiên ATC (14:30 - 14:45), robot cập nhật giá đóng cửa chính thức và tính toán lãi/lỗ chuẩn xác của ngày.
+### ✅ Bước 4: Giờ Nghỉ Trưa Thông Minh (11:30 - 12:55)
+- Bot tự động chuyển sang chế độ **Smart Idle**, tạm dừng quét nặng để bảo vệ 100% CPU máy tính.
+
+### ✅ Bước 5: Giám Sát Phiên Chiều & Khóa T+2.5 (13:00 - 14:45)
+1. Vào buổi chiều, lượng cổ phiếu mua từ phiên T-2 về tài khoản tạo rung lắc mạnh.
+2. Các lệnh mua mới được tự động gán cờ **Khóa Thanh Khoản T+2.5**.
+3. Khung giờ vàng **14:15 - 14:45**: Theo dõi dòng tiền tạo lập Big Boys và dời Trailing Stop.
+4. Đến phiên ATC (14:30 - 14:45), bot chốt giá đóng cửa chính thức và lưu snapshot PnL.
 
 ---
 
@@ -75,21 +88,29 @@ Phiên giao dịch Ngày 1 đánh dấu cột mốc chuyển dịch từ môi tr
 
 - **Xem tóm tắt tài sản ròng:**
   ```bash
-  curl.exe http://localhost:8080/api/trades/summary
+  curl.exe http://localhost:8085/api/trades/summary
   ```
 - **Xem báo cáo thu nhập ngày:**
   ```bash
-  curl.exe http://localhost:8080/api/income/today
+  curl.exe http://localhost:8085/api/income/today
+  ```
+- **Xem bảng so sánh hiệu suất đa kỳ (DoD, WoW, MoM, QoQ):**
+  ```bash
+  curl.exe http://localhost:8085/api/portfolio/performance-comparison
+  ```
+- **Xem hàng đợi rình mồi bứt phá:**
+  ```bash
+  curl.exe http://localhost:8085/api/bot/breakout-queue
   ```
 - **Tạm dừng robot khẩn cấp:**
   ```bash
-  curl.exe -X POST http://localhost:8080/api/bot/stop
+  curl.exe -X POST http://localhost:8085/api/bot/stop
   ```
 - **Kích hoạt lại robot:**
   ```bash
-  curl.exe -X POST http://localhost:8080/api/bot/start
+  curl.exe -X POST http://localhost:8085/api/bot/start
   ```
 - **Thiết lập lại Paper Trading 100 Triệu:**
   ```bash
-  curl.exe -X POST "http://localhost:8080/api/bot/setup-paper?capital=100000000"
+  curl.exe -X POST "http://localhost:8085/api/bot/setup-paper?capital=100000000"
   ```

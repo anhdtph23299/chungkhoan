@@ -55,7 +55,7 @@ export interface WealthProjection {
 
 @Injectable({ providedIn: 'root' })
 export class IncomeService {
-  private baseUrl = 'http://localhost:8080/api/income';
+  private baseUrl = 'http://localhost:8085/api/income';
 
   constructor(private http: HttpClient) {}
 

@@ -13,7 +13,7 @@ export interface ScheduleEvent {
 
 @Injectable({ providedIn: 'root' })
 export class ScheduleService {
-  private baseUrl = 'http://localhost:8080/api/schedule';
+  private baseUrl = 'http://localhost:8085/api/schedule';
 
   constructor(private http: HttpClient) {}
 

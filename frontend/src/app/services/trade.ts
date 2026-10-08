@@ -39,7 +39,7 @@ export interface PortfolioSummary {
 
 @Injectable({ providedIn: 'root' })
 export class TradeService {
-  private baseUrl = 'http://localhost:8080/api/trades';
+  private baseUrl = 'http://localhost:8085/api/trades';
 
   constructor(private http: HttpClient) {}
 

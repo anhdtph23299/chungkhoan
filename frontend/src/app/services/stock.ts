@@ -29,7 +29,7 @@ export interface MarketIndex {
 
 @Injectable({ providedIn: 'root' })
 export class StockService {
-  private baseUrl = 'http://localhost:8080/api/stock';
+  private baseUrl = 'http://localhost:8085/api/stock';
 
   constructor(private http: HttpClient) {}
 

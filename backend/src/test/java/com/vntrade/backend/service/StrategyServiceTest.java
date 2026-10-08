@@ -70,7 +70,7 @@ public class StrategyServiceTest {
     }
 
     @Test
-    @DisplayName("Kiểm tra quét toàn bộ 12 mã trọng điểm thị trường VN")
+    @DisplayName("Kiểm tra quét toàn bộ 50 mã VN50 trọng điểm thị trường VN")
     void testScanAllStocks() {
         StockQuote defaultQuote = StockQuote.builder()
             .price(BigDecimal.valueOf(30000))
@@ -83,6 +83,6 @@ public class StrategyServiceTest {
         List<StockScanResult> results = strategyService.scanAllStocks();
 
         assertNotNull(results);
-        assertEquals(12, results.size());
+        assertEquals(50, results.size());
     }
 }

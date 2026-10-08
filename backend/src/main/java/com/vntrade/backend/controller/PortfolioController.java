@@ -31,6 +31,11 @@ public class PortfolioController {
         return ResponseEntity.ok(portfolioHistoryService.getEquityCurve());
     }
 
+    @GetMapping("/performance-comparison")
+    public ResponseEntity<com.vntrade.backend.dto.PerformanceComparisonDto> getPerformanceComparison() {
+        return ResponseEntity.ok(portfolioHistoryService.getPerformanceComparison());
+    }
+
     @PostMapping("/snapshot")
     public ResponseEntity<PortfolioSnapshot> recordSnapshot() {
         return ResponseEntity.ok(portfolioHistoryService.recordCurrentSnapshot());

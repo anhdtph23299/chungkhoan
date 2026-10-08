@@ -27,7 +27,7 @@ export interface RealMoneyAudit {
 
 @Injectable({ providedIn: 'root' })
 export class RiskService {
-  private baseUrl = 'http://localhost:8080/api/risk';
+  private baseUrl = 'http://localhost:8085/api/risk';
 
   constructor(private http: HttpClient) {}
 

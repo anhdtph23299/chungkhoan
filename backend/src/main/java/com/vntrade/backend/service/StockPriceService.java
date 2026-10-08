@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Service lấy giá cổ phiếu từ API công khai của TCBS (Techcombank Securities)
@@ -28,9 +29,9 @@ public class StockPriceService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
-    // Cache đơn giản để tránh gọi API quá nhiều
-    private final Map<String, StockQuote> cache = new HashMap<>();
-    private final Map<String, Long> cacheTime = new HashMap<>();
+    // Cache thread-safe cho xử lý song song nhiều mã
+    private final Map<String, StockQuote> cache = new ConcurrentHashMap<>();
+    private final Map<String, Long> cacheTime = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 60_000; // 1 phút
 
     public StockPriceService() {

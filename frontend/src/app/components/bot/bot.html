@@ -122,6 +122,21 @@
     </div>
   </div>
 
+  <!-- Navigation Sub-tabs for Dashboard -->
+  <div class="bot-nav-tabs">
+    <button class="nav-tab-btn" [class.active]="activeTab === 'OVERVIEW'" (click)="setActiveTab('OVERVIEW')">
+      ⚡ BÀN ĐIỀU KHIỂN & LỆNH THỜI GIAN THỰC
+    </button>
+    <button class="nav-tab-btn" [class.active]="activeTab === 'RADAR'" (click)="setActiveTab('RADAR')">
+      🌅 TIỀN TRẠM MỞ PHIÊN 09/10 (08:30 - 09:00)
+    </button>
+    <button class="nav-tab-btn" [class.active]="activeTab === 'BOUNCE'" (click)="setActiveTab('BOUNCE')">
+      🎯 BẮT ĐÁY KỸ THUẬT (OVERSOLD BOUNCE)
+      <span class="badge-tab-count" *ngIf="oversoldBounce?.oversoldCandidatesCount">{{ oversoldBounce?.oversoldCandidatesCount }}</span>
+    </button>
+  </div>
+
+  <ng-container *ngIf="activeTab === 'OVERVIEW'">
   <!-- Main Grid Content: Positions & Live Terminal -->
   <div class="bot-content-grid">
     <!-- Left Section: Open Positions & Signals -->
@@ -192,6 +207,68 @@
             <div class="empty-title">Chưa có vị thế mở nào</div>
             <p class="empty-desc">
               Bot đang trực canh ở chế độ an toàn. Vào sáng Thứ Hai lúc 9h15 khi có tín hiệu đạt chuẩn 16 tầng lọc, bot sẽ tự động giải ngân.
+            </p>
+          </div>
+        </ng-template>
+      </div>
+
+      <!-- Radar Rình Mồi Chờ Nổ Vol (Breakout Watchlist Queue) -->
+      <div class="card glass-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="card-title-icon">🎯</span>
+            <div>
+              <h2 class="card-title">Radar Rình Mồi Chờ Nổ Vol (Breakout Queue)</h2>
+              <p class="card-subtitle">Cổ phiếu đạt chuẩn định chế đang bị tường bán đè — Tự động bứt phá giải ngân khi nuốt trọn tường</p>
+            </div>
+          </div>
+          <span class="badge-count">{{ breakoutQueue.length }} mã đang rình</span>
+        </div>
+
+        <div class="table-responsive" *ngIf="breakoutQueue.length > 0; else noBreakoutQueue">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>CỔ PHIẾU</th>
+                <th>GIÁ HIỆN TẠI</th>
+                <th>TƯỜNG BÁN ĐÈ (ASK WALL)</th>
+                <th>KHOẢNG CÁCH</th>
+                <th>ĐIỂM TIN CẬY</th>
+                <th>TRẠNG THÁI</th>
+                <th>CẬP NHẬT</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let item of breakoutQueue" class="position-row">
+                <td class="symbol-col">
+                  <span class="stock-symbol text-cyan">{{ item.symbol }}</span>
+                </td>
+                <td class="mono-num font-bold">{{ item.currentPrice | number:'1.0-0' }} đ</td>
+                <td class="mono-num text-red">
+                  {{ item.wallPrice | number:'1.0-0' }} đ
+                  <span class="sub-depth">({{ item.wallVolume | number }} cp - {{ item.wallProportionPercent | number:'1.1-1' }}%)</span>
+                </td>
+                <td class="mono-num text-gold font-bold">
+                  +{{ item.distancePercent | number:'1.2-2' }}%
+                </td>
+                <td>
+                  <span class="score-pill">{{ item.confidenceScore }}/100</span>
+                </td>
+                <td>
+                  <span class="badge-waiting">⏳ CHỜ NỔ VOL</span>
+                </td>
+                <td class="text-secondary font-mono">{{ item.updatedAt }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <ng-template #noBreakoutQueue>
+          <div class="empty-state">
+            <div class="empty-icon">🎯</div>
+            <div class="empty-title">Chưa có mã nào trong hàng đợi bứt phá</div>
+            <p class="empty-desc">
+              Khi bot quét thấy cổ phiếu Alpha đạt chuẩn nhưng bị tường bán lớn (≥45% độ sâu) đè giá, mã sẽ được xếp vào đây để giám sát hấp thụ Vol.
             </p>
           </div>
         </ng-template>
@@ -311,6 +388,314 @@
           </div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Bảng So Sánh Hiệu Suất Đa Kỳ (Historical Period Comparison: DoD, WoW, MoM, QoQ) -->
+  <div class="card glass-card comparison-card" *ngIf="comparison">
+    <div class="card-header">
+      <div class="card-title-group">
+        <span class="card-title-icon">📈</span>
+        <div>
+          <h2 class="card-title">So Sánh Hiệu Suất Đa Kỳ & Tăng Trưởng Vốn (DoD, WoW, MoM, QoQ)</h2>
+          <p class="card-subtitle">{{ comparison.executiveSummary }}</p>
+        </div>
+      </div>
+      <div class="rating-badge">
+        <span class="rating-label">Hedge Fund Rating:</span>
+        <span class="rating-score text-cyan font-bold">{{ comparison.hedgeFundRating }}</span>
+      </div>
+    </div>
+
+    <!-- 4 Comparison Metric Columns -->
+    <div class="period-comparison-grid">
+      <!-- 1 Ngày Trước (DoD) -->
+      <div class="period-item glass-card" *ngIf="comparison.oneDayAgo">
+        <div class="period-head">
+          <span class="period-title">{{ comparison.oneDayAgo.periodLabel }}</span>
+          <span class="period-date">{{ comparison.oneDayAgo.baselineDate }}</span>
+        </div>
+        <div class="period-nav font-mono">{{ comparison.oneDayAgo.nav | number:'1.0-0' }} đ</div>
+        <div class="period-delta font-bold" [class.text-green]="comparison.oneDayAgo.deltaNavVnd >= 0" [class.text-red]="comparison.oneDayAgo.deltaNavVnd < 0">
+          {{ comparison.oneDayAgo.deltaNavVnd >= 0 ? '+' : '' }}{{ comparison.oneDayAgo.deltaNavVnd | number:'1.0-0' }} đ
+          ({{ comparison.oneDayAgo.deltaNavPercent >= 0 ? '+' : '' }}{{ comparison.oneDayAgo.deltaNavPercent | number:'1.2-2' }}%)
+        </div>
+        <div class="period-sub">
+          <span>Win Rate: <strong>{{ comparison.oneDayAgo.winRate }}%</strong></span>
+          <span class="badge-verdict" [class.positive]="comparison.oneDayAgo.deltaNavVnd >= 0">{{ comparison.oneDayAgo.performanceVerdict }}</span>
+        </div>
+      </div>
+
+      <!-- 7 Ngày Trước (WoW) -->
+      <div class="period-item glass-card" *ngIf="comparison.oneWeekAgo">
+        <div class="period-head">
+          <span class="period-title">{{ comparison.oneWeekAgo.periodLabel }}</span>
+          <span class="period-date">{{ comparison.oneWeekAgo.baselineDate }}</span>
+        </div>
+        <div class="period-nav font-mono">{{ comparison.oneWeekAgo.nav | number:'1.0-0' }} đ</div>
+        <div class="period-delta font-bold" [class.text-green]="comparison.oneWeekAgo.deltaNavVnd >= 0" [class.text-red]="comparison.oneWeekAgo.deltaNavVnd < 0">
+          {{ comparison.oneWeekAgo.deltaNavVnd >= 0 ? '+' : '' }}{{ comparison.oneWeekAgo.deltaNavVnd | number:'1.0-0' }} đ
+          ({{ comparison.oneWeekAgo.deltaNavPercent >= 0 ? '+' : '' }}{{ comparison.oneWeekAgo.deltaNavPercent | number:'1.2-2' }}%)
+        </div>
+        <div class="period-sub">
+          <span>Win Rate: <strong>{{ comparison.oneWeekAgo.winRate }}%</strong></span>
+          <span class="badge-verdict" [class.positive]="comparison.oneWeekAgo.deltaNavVnd >= 0">{{ comparison.oneWeekAgo.performanceVerdict }}</span>
+        </div>
+      </div>
+
+      <!-- 30 Ngày Trước (MoM) -->
+      <div class="period-item glass-card" *ngIf="comparison.oneMonthAgo">
+        <div class="period-head">
+          <span class="period-title">{{ comparison.oneMonthAgo.periodLabel }}</span>
+          <span class="period-date">{{ comparison.oneMonthAgo.baselineDate }}</span>
+        </div>
+        <div class="period-nav font-mono">{{ comparison.oneMonthAgo.nav | number:'1.0-0' }} đ</div>
+        <div class="period-delta font-bold" [class.text-green]="comparison.oneMonthAgo.deltaNavVnd >= 0" [class.text-red]="comparison.oneMonthAgo.deltaNavVnd < 0">
+          {{ comparison.oneMonthAgo.deltaNavVnd >= 0 ? '+' : '' }}{{ comparison.oneMonthAgo.deltaNavVnd | number:'1.0-0' }} đ
+          ({{ comparison.oneMonthAgo.deltaNavPercent >= 0 ? '+' : '' }}{{ comparison.oneMonthAgo.deltaNavPercent | number:'1.2-2' }}%)
+        </div>
+        <div class="period-sub">
+          <span>Win Rate: <strong>{{ comparison.oneMonthAgo.winRate }}%</strong></span>
+          <span class="badge-verdict" [class.positive]="comparison.oneMonthAgo.deltaNavVnd >= 0">{{ comparison.oneMonthAgo.performanceVerdict }}</span>
+        </div>
+      </div>
+
+      <!-- 3 Tháng Trước (QoQ) -->
+      <div class="period-item glass-card" *ngIf="comparison.threeMonthsAgo">
+        <div class="period-head">
+          <span class="period-title">{{ comparison.threeMonthsAgo.periodLabel }}</span>
+          <span class="period-date">{{ comparison.threeMonthsAgo.baselineDate }}</span>
+        </div>
+        <div class="period-nav font-mono">{{ comparison.threeMonthsAgo.nav | number:'1.0-0' }} đ</div>
+        <div class="period-delta font-bold" [class.text-green]="comparison.threeMonthsAgo.deltaNavVnd >= 0" [class.text-red]="comparison.threeMonthsAgo.deltaNavVnd < 0">
+          {{ comparison.threeMonthsAgo.deltaNavVnd >= 0 ? '+' : '' }}{{ comparison.threeMonthsAgo.deltaNavVnd | number:'1.0-0' }} đ
+          ({{ comparison.threeMonthsAgo.deltaNavPercent >= 0 ? '+' : '' }}{{ comparison.threeMonthsAgo.deltaNavPercent | number:'1.2-2' }}%)
+        </div>
+        <div class="period-sub">
+          <span>Win Rate: <strong>{{ comparison.threeMonthsAgo.winRate }}%</strong></span>
+          <span class="badge-verdict" [class.positive]="comparison.threeMonthsAgo.deltaNavVnd >= 0">{{ comparison.threeMonthsAgo.performanceVerdict }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Monthly Breakdown Table -->
+    <div class="monthly-table-wrap" *ngIf="comparison.monthlyBreakdown?.length">
+      <h3 class="sub-table-title">📅 Phân Bổ Hiệu Suất Theo Từng Tháng</h3>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>THỜI GIAN</th>
+            <th>NAV ĐẦU KỲ</th>
+            <th>NAV CUỐI KỲ</th>
+            <th>LÃI / LỖ RÒNG</th>
+            <th>TỶ SUẤT (%)</th>
+            <th>TỶ LỆ THẮNG</th>
+            <th>SỐ LỆNH ĐÓNG</th>
+            <th>ĐÁNH GIÁ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let m of comparison.monthlyBreakdown">
+            <td class="font-bold">{{ m.monthLabel }}</td>
+            <td class="font-mono text-secondary">{{ m.startNav | number:'1.0-0' }} đ</td>
+            <td class="font-mono font-bold">{{ m.endNav | number:'1.0-0' }} đ</td>
+            <td class="font-mono font-bold" [class.text-green]="m.netProfitVnd >= 0" [class.text-red]="m.netProfitVnd < 0">
+              {{ m.netProfitVnd >= 0 ? '+' : '' }}{{ m.netProfitVnd | number:'1.0-0' }} đ
+            </td>
+            <td class="font-mono font-bold" [class.text-green]="m.returnPercent >= 0" [class.text-red]="m.returnPercent < 0">
+              {{ m.returnPercent >= 0 ? '+' : '' }}{{ m.returnPercent | number:'1.2-2' }}%
+            </td>
+            <td class="font-mono">{{ m.winRate | number:'1.1-1' }}%</td>
+            <td class="font-mono">{{ m.tradesCount }} lệnh</td>
+            <td>
+              <span class="badge-status-pill" [class.profit]="m.statusBadge === 'PROFITABLE'" [class.flat]="m.statusBadge === 'FLAT'">
+                {{ m.statusBadge === 'PROFITABLE' ? 'LÃI RÒNG' : m.statusBadge === 'FLAT' ? 'HÒA VỐN' : 'ĐIỀU CHỈNH' }}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </ng-container>
+
+  <!-- TAB 2: Pre-Market Sentiment Scanner (08:30 - 09:00) -->
+  <div class="pre-market-container" *ngIf="activeTab === 'RADAR'">
+    <div class="card glass-card" *ngIf="preMarket">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="card-title-icon">🌅</span>
+          <div>
+            <h2 class="card-title">Radar Tiền Trạm Trước Giờ Mở Cửa (Pre-Market Scanner)</h2>
+            <p class="card-subtitle">
+              Cập nhật lúc: {{ preMarket.checkedAt | date:'HH:mm:ss dd/MM/yyyy' }} — Tự động phân tích vĩ mô, dầu mỏ quốc tế & định hướng ATO
+            </p>
+          </div>
+        </div>
+        <div class="sentiment-score-badge" [class.cautious]="preMarket.sentimentScore <= 50" [class.bullish]="preMarket.sentimentScore > 50">
+          <span class="score-label">Điểm Tâm Lý Mở Cửa:</span>
+          <span class="score-val">{{ preMarket.sentimentScore }} / 100</span>
+          <span class="score-status">({{ preMarket.openingMarketSentiment }})</span>
+        </div>
+      </div>
+
+      <!-- Macro Indicators Grid -->
+      <div class="macro-grid">
+        <div class="macro-item glass-card">
+          <div class="macro-label">🛢️ DẦU BRENT QUỐC TẾ</div>
+          <div class="macro-value text-gold font-mono">${{ preMarket.brentPrice }}</div>
+          <div class="macro-sub text-green font-bold">+{{ preMarket.brentChangePercent }}% (Vượt ngưỡng $100)</div>
+          <span class="status-pill status-alert">BÙNG NỔ TRÊN $100</span>
+        </div>
+
+        <div class="macro-item glass-card">
+          <div class="macro-label">🛢️ DẦU WTI QUỐC TẾ</div>
+          <div class="macro-value text-gold font-mono">${{ preMarket.wtiPrice }}</div>
+          <div class="macro-sub text-green font-bold">+{{ preMarket.wtiChangePercent }}%</div>
+          <span class="status-pill status-success">TĂNG TRƯỞNG MẠNH</span>
+        </div>
+
+        <div class="macro-item glass-card">
+          <div class="macro-label">🌎 THỊ TRƯỜNG HOA KỲ</div>
+          <div class="macro-value text-cyan">DOW JONES / S&P</div>
+          <div class="macro-sub text-muted">{{ preMarket.usMarketSentiment }}</div>
+          <span class="status-pill status-neutral">ỔN ĐỊNH TRUNG LẬP</span>
+        </div>
+
+        <div class="macro-item glass-card">
+          <div class="macro-label">🌏 KHỐI NGOẠI PHIÊN TRƯỚC</div>
+          <div class="macro-value font-mono text-red">
+            {{ preMarket.foreignFlowYesterdayBillionVnd }} tỷ đ
+          </div>
+          <div class="macro-sub text-muted">Bán ròng phiên 08/10</div>
+          <span class="status-pill status-warning">ÁP LỰC DÒNG TIỀN</span>
+        </div>
+      </div>
+
+      <!-- Phép thử kiểm định nhóm dầu khí -->
+      <div class="hypothesis-box glass-card">
+        <div class="hypothesis-header">
+          <span class="hypothesis-icon">🔬</span>
+          <span class="hypothesis-title">KIỂM CHỨNG GIẢ THUYẾT THỰC NGHIỆM DAY 2 (09/10/2026)</span>
+        </div>
+        <p class="hypothesis-body">{{ preMarket.hypothesisVerdict }}</p>
+      </div>
+
+      <!-- Khuyến nghị chiến thuật 3 bước -->
+      <div class="tactic-box glass-card">
+        <div class="tactic-header">
+          <span class="tactic-icon">📋</span>
+          <span class="tactic-title">QUY TẮC HÀNH ĐỘNG MỞ PHIÊN TỰ ĐỘNG</span>
+        </div>
+        <p class="tactic-body">{{ preMarket.recommendedOpeningTactic }}</p>
+      </div>
+
+      <!-- Priority Watchlist Table -->
+      <div class="table-wrap">
+        <h3 class="sub-table-title">🎯 Danh Sách Tiêu Điểm Trực Canh Mở Cửa (Priority Watchlist)</h3>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>CỔ PHIẾU</th>
+              <th>NGÀNH NGHỀ</th>
+              <th>GIÁ THAM CHIẾU</th>
+              <th>LÝ DO TRỌNG TÂM</th>
+              <th>KẾ HOẠCH HÀNH ĐỘNG</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let item of preMarket.priorityWatchlist">
+              <td class="font-bold text-cyan">{{ item.symbol }}</td>
+              <td><span class="sector-badge">{{ item.sector }}</span></td>
+              <td class="font-mono font-bold">{{ item.referencePrice | number:'1.0-0' }} đ</td>
+              <td>{{ item.focusReason }}</td>
+              <td class="text-gold font-bold">{{ item.triggerAction }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: Tactical Oversold Bounce Detector -->
+  <div class="bounce-container" *ngIf="activeTab === 'BOUNCE'">
+    <div class="card glass-card" *ngIf="oversoldBounce">
+      <div class="card-header">
+        <div class="card-title-group">
+          <span class="card-title-icon">🎯</span>
+          <div>
+            <h2 class="card-title">Máy Quét Bắt Đáy Hoảng Loạn (Tactical Panic Oversold Bounce)</h2>
+            <p class="card-subtitle">
+              Đã quét <strong>{{ oversoldBounce.totalSymbolsScanned }} mã VN50</strong> lúc {{ oversoldBounce.scanTime | date:'HH:mm:ss dd/MM/yyyy' }} — Tầm soát RSI &le; 36, Bollinger Band Dưới & Hỗ trợ SMA200
+            </p>
+          </div>
+        </div>
+        <div class="panic-status-badge" [class.panic]="oversoldBounce.marketPanicStatus === 'EXTREME_PANIC'" [class.moderate]="oversoldBounce.marketPanicStatus === 'MODERATE_OVERSOLD'">
+          <span class="badge-label">Trạng thái Hoảng loạn:</span>
+          <span class="badge-status-val">{{ oversoldBounce.marketPanicStatus }}</span>
+        </div>
+      </div>
+
+      <!-- Macro Verdict -->
+      <div class="macro-banner glass-card">
+        <span class="banner-icon">💡</span>
+        <span class="banner-text">{{ oversoldBounce.macroVerdict }}</span>
+      </div>
+
+      <!-- Candidates Table -->
+      <div class="table-wrap" *ngIf="oversoldBounce.candidates?.length; else noCandidates">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>CỔ PHIẾU</th>
+              <th>NGÀNH</th>
+              <th>GIÁ HIỆN TẠI</th>
+              <th>% NGÀY</th>
+              <th>RSI (14)</th>
+              <th>BOLLINGER DƯỚI</th>
+              <th>SMA200</th>
+              <th>TÍN HIỆU</th>
+              <th>ĐIỂM NẢY</th>
+              <th>TỶ TRỌNG NAV</th>
+              <th>CẮT LỖ / MỤC TIÊU</th>
+              <th>R:R</th>
+              <th>KẾ HOẠCH</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let c of oversoldBounce.candidates">
+              <td class="font-bold text-cyan">{{ c.symbol }}</td>
+              <td><span class="sector-badge">{{ c.sector }}</span></td>
+              <td class="font-mono font-bold">{{ c.currentPrice | number:'1.0-0' }} đ</td>
+              <td class="font-mono" [class.text-green]="c.changePercent >= 0" [class.text-red]="c.changePercent < 0">
+                {{ c.changePercent >= 0 ? '+' : '' }}{{ c.changePercent | number:'1.2-2' }}%
+              </td>
+              <td class="font-mono font-bold text-red">{{ c.rsi14 | number:'1.1-1' }}</td>
+              <td class="font-mono text-muted">{{ c.bollingerLower | number:'1.0-0' }} đ</td>
+              <td class="font-mono text-secondary">{{ c.sma200 | number:'1.0-0' }} đ</td>
+              <td><span class="badge-signal-bounce">{{ c.divergenceSignal }}</span></td>
+              <td>
+                <span class="bounce-score-pill" [class.high]="c.bounceScore >= 70" [class.med]="c.bounceScore >= 50 && c.bounceScore < 70">
+                  {{ c.bounceScore }}/100
+                </span>
+              </td>
+              <td class="font-mono font-bold text-cyan">{{ c.suggestedTacticalAllocationPercent }}%</td>
+              <td class="font-mono">
+                <span class="text-red">{{ c.tacticalStopLoss | number:'1.0-0' }}</span> /
+                <span class="text-green">{{ c.tacticalTargetPrice | number:'1.0-0' }}</span>
+              </td>
+              <td class="font-mono font-bold text-gold">{{ c.riskRewardRatio | number:'1.2-2' }}x</td>
+              <td class="tactic-cell">{{ c.executionTactic }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <ng-template #noCandidates>
+        <div class="empty-state">
+          <span>🛡️ Không có cổ phiếu nào rơi vào vùng quá bán hoảng loạn cực độ. Thị trường đang giữ vùng cân bằng.</span>
+        </div>
+      </ng-template>
     </div>
   </div>
 </div>

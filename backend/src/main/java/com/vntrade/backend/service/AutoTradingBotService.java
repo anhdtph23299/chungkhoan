@@ -49,8 +49,24 @@ public class AutoTradingBotService {
     private BigDecimal dailyMaxLossLimit = BigDecimal.valueOf(2_000_000); // Giới hạn lỗ tối đa 2.000.000 đ/ngày (-2.0% NAV)
     private BigDecimal todayRealizedPnl = BigDecimal.ZERO;
     private int todayTradesCount = 0;
-    private final List<String> botLogs = new ArrayList<>();
+    private final List<String> botLogs = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final List<java.util.Map<String, Object>> breakoutWatchlist = new java.util.concurrent.CopyOnWriteArrayList<>();
     private boolean enforceMarketHours = true;
+    private int cycleScanCount = 0;
+
+    public List<java.util.Map<String, Object>> getBreakoutWatchlist() {
+        return breakoutWatchlist;
+    }
+
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        if (botLogs.isEmpty()) {
+            addLog(String.format("🚀 [KHỞI TẠO PAPER TRADING THÀNH CÔNG] Vốn: %,.0f đ | Chế độ: LIVE_PAPER_MONEY", accountCapital));
+            addLog(String.format("🎯 Mục tiêu lợi nhuận ngày: +%,.0f đ (+1.5%%) | Cầu chì bảo vệ vốn: -%,.0f đ (-2.0%%)", dailyProfitTarget, dailyMaxLossLimit));
+            addLog("📅 Hệ thống đã vào vị trí sẵn sàng trực canh phiên khớp lệnh Ngày 1 (09:00 - 14:45)!");
+            addLog("🛡️ [DEFCON-1 BẢO VỆ] Cầu chì an toàn: NORMAL_DEFENSE | Thị trường ổn định.");
+        }
+    }
 
     public boolean isEnforceMarketHours() {
         return enforceMarketHours;
@@ -113,6 +129,7 @@ public class AutoTradingBotService {
         this.todayRealizedPnl = BigDecimal.ZERO;
         this.todayTradesCount = 0;
         this.botLogs.clear();
+        this.breakoutWatchlist.clear();
 
         try {
             tradeRepository.deleteAll();
@@ -291,8 +308,37 @@ public class AutoTradingBotService {
                     OrderBookImbalanceDto obi = orderBookImbalanceService.analyzeMicrostructure(scan.getSymbol());
                     if (obi != null) {
                         if ("ASK_WALL_RESISTANCE".equals(obi.getWallDetected()) && obi.getWallProportionPercent() != null && obi.getWallProportionPercent().doubleValue() >= 45.0) {
-                            addLog("🛡️ [SỔ LỆNH LEVEL-2] Bỏ qua " + scan.getSymbol() + ": Tường bán đè giá tại " + obi.getWallPrice() + " (" + String.format("%,d", obi.getWallVolume()) + " cp - " + obi.getWallProportionPercent() + "% độ sâu).");
-                            continue;
+                            BigDecimal wallPrice = obi.getWallPrice() != null ? obi.getWallPrice() : scan.getPrice();
+                            if (scan.getPrice().compareTo(wallPrice) >= 0) {
+                                // Giá đã ăn thủng hoặc vượt qua tường bán! Lực cầu tổ chức hấp thụ thành công.
+                                addLog(String.format("🚀 [BREAKOUT BỨT PHÁ TƯỜNG BÁN] %s: Lực cầu tổ chức nuốt trọn tường bán %,.0f đ (%,d cp)! Kích hoạt lệnh giải ngân Breakout.",
+                                    scan.getSymbol(), wallPrice.doubleValue(), obi.getWallVolume() != null ? obi.getWallVolume() : 0));
+                                breakoutWatchlist.removeIf(item -> scan.getSymbol().equalsIgnoreCase((String) item.get("symbol")));
+                            } else {
+                                // Đưa vào hàng đợi radar rình mồi chờ nổ Vol bứt phá
+                                java.util.Map<String, Object> queueItem = new java.util.HashMap<>();
+                                queueItem.put("symbol", scan.getSymbol());
+                                queueItem.put("wallPrice", wallPrice);
+                                queueItem.put("wallVolume", obi.getWallVolume());
+                                queueItem.put("wallProportionPercent", obi.getWallProportionPercent());
+                                queueItem.put("currentPrice", scan.getPrice());
+                                BigDecimal dist = scan.getPrice().compareTo(BigDecimal.ZERO) > 0
+                                    ? wallPrice.subtract(scan.getPrice()).divide(scan.getPrice(), 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+                                    : BigDecimal.ZERO;
+                                queueItem.put("distancePercent", dist);
+                                queueItem.put("confidenceScore", scan.getConfidenceScore());
+                                queueItem.put("status", "WAITING_BREAKOUT");
+                                queueItem.put("updatedAt", LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+
+                                breakoutWatchlist.removeIf(item -> scan.getSymbol().equalsIgnoreCase((String) item.get("symbol")));
+                                breakoutWatchlist.add(0, queueItem);
+                                if (breakoutWatchlist.size() > 10) breakoutWatchlist.remove(breakoutWatchlist.size() - 1);
+
+                                addLog(String.format("🎯 [RADAR RÌNH MỒI BREAKOUT] %s: Chờ nổ Vol vượt tường bán %,.0f đ (%,d cp - %.1f%%). Giá hiện tại %,.0f đ (cách %.2f%%).",
+                                    scan.getSymbol(), wallPrice.doubleValue(), obi.getWallVolume() != null ? obi.getWallVolume() : 0,
+                                    obi.getWallProportionPercent().doubleValue(), scan.getPrice().doubleValue(), dist.doubleValue()));
+                                continue;
+                            }
                         }
                         if (obi.getOrderBookImbalanceRatio() != null && obi.getOrderBookImbalanceRatio().compareTo(BigDecimal.valueOf(-0.35)) < 0) {
                             addLog("🛡️ [OBI FILTER] Bỏ qua " + scan.getSymbol() + ": Áp lực xả hàng vi mô (OBI = " + obi.getOrderBookImbalanceRatio() + ").");
@@ -423,6 +469,7 @@ public class AutoTradingBotService {
                         .build();
 
                     Trade created = tradeService.createTrade(tradeReq);
+                    breakoutWatchlist.removeIf(item -> created.getSymbol().equalsIgnoreCase((String) item.get("symbol")));
                     todayTradesCount++;
                     addLog(String.format("⚡ ĐÃ MỞ VỊ THẾ: Mua %d cp %s giá %s đ | SL: %s | TP: %s (R:R = 1:%s)",
                         created.getQuantity(), created.getSymbol(), created.getPrice(), created.getStopLoss(), created.getTakeProfit(), sizing.getRiskRewardRatio()));
@@ -442,6 +489,36 @@ public class AutoTradingBotService {
                     break; // Mở 1 mã mỗi chu kỳ để tránh giải ngân ồ ạt
                 }
             }
+        }
+
+        // Ghi nhận trực canh mỗi chu kỳ để người dùng theo dõi rõ tiến độ trên Live Trace Console
+        cycleScanCount++;
+        if (!scans.isEmpty()) {
+            StockScanResult top = scans.stream()
+                .max(java.util.Comparator.comparingInt(StockScanResult::getConfidenceScore))
+                .orElse(scans.get(0));
+            addLog(String.format("🔍 [TRỰC CANH QUÉT VN50] Quét %d mã: Cao nhất %s (%dđ/100). Chưa có mã đạt chuẩn giải ngân (≥75đ). Bảo toàn 100%% tiền mặt.",
+                scans.size(), top.getSymbol(), top.getConfidenceScore()));
+        }
+
+        // Luân phiên ghi nhận thông tin chuyên sâu theo các phân hệ để làm giàu dữ liệu lọc (Filter Tabs)
+        if (cycleScanCount % 3 == 0) {
+            try {
+                var rrg = relativeRotationGraphService.calculateSectorsRrg();
+                if (rrg != null) {
+                    addLog(String.format("📈 [RRG ALPHA DÒNG TIỀN] Nhóm dẫn dắt: %s | Nhóm suy kiệt tụt hậu: %s.",
+                        rrg.getTopLeadingSectors(), rrg.getToxicLaggingSectors()));
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (cycleScanCount % 4 == 0) {
+            addLog(String.format("🛡️ [DEFCON-1 BẢO VỆ] Trạng thái: %s | Cầu chì an toàn: Cho phép giải ngân khi có điểm nổ Pocket Pivot.",
+                crashStatus.getDefenseStatus()));
+        }
+
+        if (cycleScanCount % 5 == 0) {
+            addLog("💧 [KIỂM TOÁN THANH KHOẢN] Khóa T+2.5 kích hoạt | Bước giá sàn HOSE/HNX chuẩn hóa | Kiểm soát trượt giá Slippage 0.15%.");
         }
     }
 

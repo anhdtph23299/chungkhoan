@@ -29,6 +29,18 @@ public class AnalysisController {
     private final com.vntrade.backend.service.RegimeSwitchingSignalService regimeSwitchingSignalService;
     private final com.vntrade.backend.service.AdaptivePositionSizingService adaptivePositionSizingService;
     private final com.vntrade.backend.service.RelativeRotationGraphService relativeRotationGraphService;
+    private final com.vntrade.backend.service.PreMarketSentimentService preMarketSentimentService;
+    private final com.vntrade.backend.service.OversoldBounceDetectorService oversoldBounceDetectorService;
+
+    @GetMapping("/pre-market-sentiment")
+    public ResponseEntity<com.vntrade.backend.dto.PreMarketSentimentDto> getPreMarketSentiment() {
+        return ResponseEntity.ok(preMarketSentimentService.analyzePreMarketSentiment());
+    }
+
+    @GetMapping("/oversold-bounce")
+    public ResponseEntity<com.vntrade.backend.dto.OversoldBounceDto> getOversoldBounceScan() {
+        return ResponseEntity.ok(oversoldBounceDetectorService.scanOversoldBounceCandidates());
+    }
 
     @GetMapping("/kalman-filter/{symbol}")
     public ResponseEntity<com.vntrade.backend.dto.KalmanFilterTrendDto> getKalmanFilterAnalysis(@PathVariable String symbol) {

@@ -17,7 +17,7 @@ export interface WatchlistItem {
 
 @Injectable({ providedIn: 'root' })
 export class WatchlistService {
-  private baseUrl = 'http://localhost:8080/api/watchlist';
+  private baseUrl = 'http://localhost:8085/api/watchlist';
 
   constructor(private http: HttpClient) {}
 

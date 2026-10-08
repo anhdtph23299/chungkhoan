@@ -27,8 +27,8 @@ public class CandleDataService {
     private final ObjectMapper objectMapper;
     private final StockPriceService stockPriceService;
 
-    // Cache historical candles
-    private final Map<String, List<Candle>> candleCache = new HashMap<>();
+    // Cache historical candles thread-safe cho xử lý song song
+    private final Map<String, List<Candle>> candleCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     public CandleDataService(StockPriceService stockPriceService) {
         var requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();

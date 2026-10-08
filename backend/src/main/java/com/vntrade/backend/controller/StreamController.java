@@ -1,6 +1,7 @@
 package com.vntrade.backend.controller;
 
 import com.vntrade.backend.service.SseStreamService;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -17,8 +18,11 @@ public class StreamController {
 
     private final SseStreamService sseStreamService;
 
-    @GetMapping(value = "/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamEvents() {
+    @GetMapping(value = {"/events", "/sse"}, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamEvents(HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-cache, no-transform");
+        response.setHeader("Connection", "keep-alive");
+        response.setHeader("X-Accel-Buffering", "no");
         return sseStreamService.registerClient();
     }
 }
