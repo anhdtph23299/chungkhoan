@@ -12,16 +12,17 @@
     <div class="stale-alert-icon">🚨</div>
     <div class="stale-alert-text">
       <strong>CẢNH BÁO: MẤT KẾT NỐI NGUỒN DỮ LIỆU THẬT (STALE / FEED DISCONNECTED)!</strong>
-      <p>Toàn bộ API sàn (VNDirect, TCBS, SSI) không phản hồi. Robot đã <b>TỰ ĐỘNG PHONG TỎA 100% LỆNH MUA MỚI</b> để bảo vệ vốn tuyệt đối.</p>
+      <p>Toàn bộ API sàn (VNDirect, TCBS, SSI) không phản hồi. Robot đã <b>TỰ ĐỘNG DỪNG MỞ MỌI LỆNH MUA MỚI</b> để bảo vệ vốn tuyệt đối.</p>
+      <p class="stale-subnote">⚠️ Lưu ý an toàn: Do mất nguồn giá trực tiếp, tính năng tự động Cắt lỗ / Trailing Stop tạm thời không nhận được giá cập nhật. Vui lòng theo dõi danh mục thủ công trên bảng giá CTCK!</p>
     </div>
-    <span class="stale-badge-pill">PROTECTION MODE</span>
+    <span class="stale-badge-pill">EMERGENCY PAUSE</span>
   </div>
 
   <!-- Hero Header Panel -->
   <div class="bot-hero glass-card">
     <div class="hero-left">
       <div class="bot-badge-title">
-        <span class="ai-chip">QUANT AI CORE</span>
+        <span class="ai-chip">FORWARD TEST: T1 CORE</span>
         <span class="mode-pill" [class.paper]="status.mode === 'LIVE_PAPER_MONEY'">
           {{ status.mode === 'LIVE_PAPER_MONEY' ? '⚡ LIVE PAPER TRADING (GIÁ THẬT HOSE)' : status.mode }}
         </span>
@@ -29,9 +30,9 @@
           <span class="dot-indicator"></span> {{ status.marketDataStatus === 'REAL' ? 'DATA: REAL (SÀN THẬT)' : 'DATA: STALE (MẤT KẾT NỐI)' }}
         </span>
       </div>
-      <h1 class="bot-title">Robot Giao Dịch Tự Động Định Chế</h1>
+      <h1 class="bot-title">Robot Giao Dịch Tự Động: T1 Core + Shadow Mode</h1>
       <p class="bot-subtitle">
-        Hệ thống săn Alpha & Quản trị rủi ro 16 tầng tự động — Tự động nhận diện bứt phá, cắt lỗ dứt khoát & gặt tiền mặt mỗi ngày.
+        Chiến lược thực thi: <strong>T1 Core (Breakout + Trend)</strong> phối hợp Cầu chì <strong>DEFCON-1</strong>. 06 Tầng vi cấu trúc (CANSLIM, MTF, RRG, OBI, Spoofing, Kalman) hoạt động ở chế độ <em>Shadow Mode (Quan sát & Đối soát sau 5-10 phiên)</em>.
       </p>
     </div>
 
@@ -97,22 +98,22 @@
       </div>
     </div>
 
-    <!-- Card 3: Kỳ Vọng Định Chế (Expectancy & Institutional Edge) -->
+    <!-- Card 3: Kỳ Vọng Forward Test Thực Tế (Forward Test Metrics) -->
     <div class="kpi-card glass-card">
       <div class="kpi-header">
-        <span class="kpi-label">KỲ VỌNG EXPECTANCY / TRADE</span>
+        <span class="kpi-label">FORWARD TEST EXPECTANCY</span>
         <span class="kpi-icon">🎯</span>
       </div>
       <div class="kpi-value text-gold">
-        +{{ (status.targetExpectancy || 1.20) | number:'1.2-2' }} <span class="currency">%</span>
+        {{ (status.forwardTestExpectancy !== undefined && status.forwardTestClosedTradesCount ? (status.forwardTestExpectancy > 0 ? '+' : '') + (status.forwardTestExpectancy | number:'1.2-2') + '%' : 'Đang tích lũy mẫu') }}
       </div>
       <div class="progress-box">
         <div class="progress-bar">
-          <div class="progress-fill" [style.width.%]="status.targetWinRate || 51.4"></div>
+          <div class="progress-fill" [style.width.%]="status.forwardTestWinRate || 0"></div>
         </div>
         <div class="progress-label">
-          <span>Target WinRate: <strong>{{ status.targetWinRate || 51.4 }}%</strong></span>
-          <span>Sharpe: <strong>{{ status.targetSharpe || 0.92 }}</strong></span>
+          <span>WinRate Thực Tế: <strong>{{ (status.forwardTestWinRate !== undefined ? (status.forwardTestWinRate | number:'1.1-1') : '0.0') }}%</strong></span>
+          <span>Đã đóng: <strong>{{ status.forwardTestClosedTradesCount || 0 }} lệnh</strong></span>
         </div>
       </div>
     </div>

@@ -72,13 +72,11 @@ public class AutoTradingBotService {
     private boolean enforceMarketHours = true;
     private int cycleScanCount = 0;
 
-    // Institutional Performance Metrics (Dựa trên kiểm chứng Out-Of-Sample 2025-2026)
-    private BigDecimal targetExpectancy = BigDecimal.valueOf(1.20); // Kỳ vọng toán học sau phí/thuế/trượt giá: +1.20%/lệnh
-    private BigDecimal targetWinRate = BigDecimal.valueOf(51.4); // Tỷ lệ thắng mục tiêu kiểm chứng: 51.4%
-    private BigDecimal targetSharpe = BigDecimal.valueOf(0.92); // Sharpe Ratio kỳ vọng OOS: 0.92
-    private BigDecimal maxDrawdownThreshold = BigDecimal.valueOf(19.04); // Ngưỡng MaxDD tối đa cho phép: 19.04%
+    // Forward Test Strategy: Core T1 (Breakout + Trend) + DEFCON-1 Circuit Breaker
+    // Các tầng lọc nâng cao (CANSLIM, MTF, RRG, OBI, Spoofing, Kalman) chạy SHADOW MODE để tích lũy dữ liệu
+    private String executionStrategy = "FORWARD_TEST_T1_CORE_DEFCON";
+    private BigDecimal maxDrawdownThreshold = BigDecimal.valueOf(20.0); // Ngưỡng MaxDD cảnh báo: 20.0%
     private BigDecimal riskPerTradePercent = BigDecimal.valueOf(1.50); // Rủi ro cho phép mỗi lệnh: 1.50% NAV
-    private String cycleLabel = "Walk-Forward OOS 2025-2026 Verified";
 
     public List<java.util.Map<String, Object>> getBreakoutWatchlist() {
         return breakoutWatchlist;
@@ -88,9 +86,8 @@ public class AutoTradingBotService {
     public void init() {
         if (botLogs.isEmpty()) {
             addLog(String.format("🚀 [KHỞI TẠO PAPER TRADING THÀNH CÔNG] Vốn: %,.0f đ | Chế độ: LIVE_PAPER_MONEY", accountCapital));
-            addLog(String.format("🎯 [MỤC TIÊU ĐỊNH CHẾ OOS] Kỳ vọng Expectancy: +%.2f%%/lệnh | Target WinRate: %.1f%% | Target Sharpe: %.2f | Cầu chì ngắt ngày: -%,.0f đ (-2.0%%)",
-                    targetExpectancy, targetWinRate, targetSharpe, dailyMaxLossLimit));
-            addLog("📅 Hệ thống đã vào vị trí sẵn sàng trực canh phiên khớp lệnh Ngày 1 (09:00 - 14:45)!");
+            addLog("🔬 [CHIẾN LƯỢC FORWARD TEST] Cốt lõi: T1 (Breakout + Trend) + Cầu chì DEFCON-1 | 6 Tầng lọc nâng cao (CANSLIM, RRG, OBI, Spoofing, MTF, Kalman) chạy SHADOW MODE quan sát.");
+            addLog("📊 Hiệu suất thực tế được đo lường động từ kết quả các lệnh đã đóng, không dùng chỉ tiêu cứng hay nhãn Verified giả định.");
             addLog("🛡️ [DEFCON-1 BẢO VỆ] Cầu chì an toàn: NORMAL_DEFENSE | Thị trường ổn định.");
         }
     }
@@ -145,15 +142,15 @@ public class AutoTradingBotService {
     }
 
     public BigDecimal getTargetExpectancy() {
-        return targetExpectancy;
+        return getForwardTestExpectancy();
     }
 
     public BigDecimal getTargetWinRate() {
-        return targetWinRate;
+        return getForwardTestWinRate();
     }
 
     public BigDecimal getTargetSharpe() {
-        return targetSharpe;
+        return BigDecimal.ZERO;
     }
 
     public BigDecimal getMaxDrawdownThreshold() {
@@ -165,7 +162,32 @@ public class AutoTradingBotService {
     }
 
     public String getCycleLabel() {
-        return cycleLabel;
+        return "Real-time Forward Test (T1 + DEFCON-1 Core)";
+    }
+
+    public String getExecutionStrategy() {
+        return executionStrategy;
+    }
+
+    public BigDecimal getForwardTestWinRate() {
+        List<Trade> closed = tradeRepository.findByStatusOrderByTradeDateDesc("closed");
+        if (closed.isEmpty()) return BigDecimal.ZERO;
+        long wins = closed.stream().filter(t -> t.getPnl() != null && t.getPnl().compareTo(BigDecimal.ZERO) > 0).count();
+        return BigDecimal.valueOf(wins * 100.0 / closed.size()).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal getForwardTestExpectancy() {
+        List<Trade> closed = tradeRepository.findByStatusOrderByTradeDateDesc("closed");
+        if (closed.isEmpty()) return BigDecimal.ZERO;
+        BigDecimal sumPct = closed.stream()
+            .filter(t -> t.getPnlPercent() != null)
+            .map(Trade::getPnlPercent)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return sumPct.divide(BigDecimal.valueOf(closed.size()), 2, RoundingMode.HALF_UP);
+    }
+
+    public int getForwardTestClosedTradesCount() {
+        return tradeRepository.findByStatusOrderByTradeDateDesc("closed").size();
     }
 
     /**
@@ -308,55 +330,10 @@ public class AutoTradingBotService {
                 boolean alreadyHolding = openTrades.stream().anyMatch(t -> t.getSymbol().equalsIgnoreCase(scan.getSymbol()));
                 if (alreadyHolding) continue;
 
-                // Lọc tiêu chuẩn CANSLIM đẳng cấp định chế (Institutional Grade)
-                CanslimRatingDto canslim = canslimRatingService.rateStock(scan.getSymbol());
-                if (!canslim.isInstitutionalGrade()) {
-                    if (botDecisionAuditService != null) {
-                        botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "CANSLIM", "Grade " + canslim.getCanslimGrade() + " (" + canslim.getCanslimScore() + "đ)", scan.getConfidenceScore());
-                    }
-                    addLog("🛡️ [CANSLIM FILTER] Bỏ qua " + scan.getSymbol() + " (Grade " + canslim.getCanslimGrade() + " - " + canslim.getCanslimScore() + "đ): Không đạt chuẩn chất lượng quỹ.");
-                    continue;
-                }
-
-                // Kiểm tra đồng thuận đa khung thời gian W1-D1-H1
-                MultiTimeframeConfluenceDto mtf = confluenceService.analyzeMultiTimeframe(scan.getSymbol());
-                if (mtf.getConfluenceScore() < 65) {
-                    if (botDecisionAuditService != null) {
-                        botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "CONFLUENCE_MTF", mtf.getRecommendationVerdict(), scan.getConfidenceScore());
-                    }
-                    addLog("⏳ [ĐỒNG THUẬN KHUNG GIỜ] Bỏ qua " + scan.getSymbol() + " (Score " + mtf.getConfluenceScore() + "/100): " + mtf.getRecommendationVerdict());
-                    continue;
-                }
-
-                // Kiểm tra Đồ thị Xoay tua Tương đối RRG (Relative Rotation Graph vs VN-Index)
-                try {
-                    RrgItemDto rrg = relativeRotationGraphService.calculateSingleStockRrg(scan.getSymbol());
-                    if (rrg != null) {
-                        if ("LAGGING".equals(rrg.getQuadrant()) && "SOUTHWEST".equals(rrg.getHeadingDirection())) {
-                            if (botDecisionAuditService != null) {
-                                botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "RRG_LAGGING", "Nằm ở góc Lagging hướng Tây Nam", scan.getConfidenceScore());
-                            }
-                            addLog(String.format("🛡️ [BẪY TỤT HẬU RRG] Bỏ qua %s: Nằm ở góc LAGGING hướng Tây Nam (RS-Ratio=%.2f, RS-Momentum=%.2f, Góc=%.1f°). Sức mạnh tương đối suy kiệt so với VN-Index.",
-                                scan.getSymbol(),
-                                rrg.getCurrentPoint().getRsRatio().doubleValue(),
-                                rrg.getCurrentPoint().getRsMomentum().doubleValue(),
-                                rrg.getHeadingAngle().doubleValue()));
-                            continue;
-                        }
-                        if ("LEADING".equals(rrg.getQuadrant()) && "NORTHEAST".equals(rrg.getHeadingDirection())) {
-                            addLog(String.format("🚀 [RRG ALPHA LEADER] %s: Siêu cổ phiếu dẫn dắt thị trường (RS-Ratio=%.2f, RS-Momentum=%.2f, Vận tốc=%.2f, Điểm tin cậy=%d/100).",
-                                scan.getSymbol(),
-                                rrg.getCurrentPoint().getRsRatio().doubleValue(),
-                                rrg.getCurrentPoint().getRsMomentum().doubleValue(),
-                                rrg.getRotationalVelocity().doubleValue(),
-                                rrg.getConvictionScore()));
-                        }
-                    }
-                } catch (Exception e) {
-                    log.debug("Bỏ qua kiểm tra RRG cho {}: {}", scan.getSymbol(), e.getMessage());
-                }
-
-                // Định lượng vị thế theo RiskService (Anti-Martingale dynamic risk & trần ngành 35%)
+                // =========================================================================
+                // 1. TẦNG QUYẾT ĐỊNH CỐT LÕI (CORE EXECUTION): T1 TREND FILTER + DEFCON-1
+                // =========================================================================
+                // Kiểm tra phân bổ vốn và trần ngành 35% NAV theo RiskService
                 BigDecimal dynamicRisk = riskService.getDynamicRiskPercent();
                 PositionSizingRequest riskReq = PositionSizingRequest.builder()
                     .symbol(scan.getSymbol())
@@ -368,197 +345,146 @@ public class AutoTradingBotService {
                     .build();
 
                 PositionSizingResult sizing = riskService.calculatePositionSize(riskReq);
-                if (sizing.isAcceptable() && sizing.getMaxSharesToBuy() >= 100) {
-                    BigDecimal proposedCost = scan.getPrice().multiply(BigDecimal.valueOf(sizing.getMaxSharesToBuy()));
-                    if (!riskService.isSectorAllocationAllowed(scan.getSymbol(), proposedCost, accountCapital)) {
-                        addLog("🛡️ [KIỂM SOÁT NGÀNH] Tạm dừng mua " + scan.getSymbol() + ": Nhóm " + riskService.getSectorForSymbol(scan.getSymbol()) + " đã chạm trần 35% NAV.");
-                        continue;
-                    }
+                if (!sizing.isAcceptable() || sizing.getMaxSharesToBuy() < 100) {
+                    continue;
+                }
 
-                    // Kiểm tra Dòng tiền thông minh (Smart Money Flow)
-                    SmartMoneyFlowDto smf = smartMoneyFlowService.analyzeSmartMoney(scan.getSymbol());
-                    if (smf.getAccumulationScore() < 40) {
-                        addLog("⚠️ [DÒNG TIỀN] Bỏ qua " + scan.getSymbol() + ": Dòng tiền lớn chưa xác nhận gom hàng (Score: " + smf.getAccumulationScore() + "/100).");
-                        continue;
-                    }
+                BigDecimal proposedCost = scan.getPrice().multiply(BigDecimal.valueOf(sizing.getMaxSharesToBuy()));
+                if (!riskService.isSectorAllocationAllowed(scan.getSymbol(), proposedCost, accountCapital)) {
+                    addLog("🛡️ [KIỂM SOÁT NGÀNH] Tạm dừng mua " + scan.getSymbol() + ": Nhóm " + riskService.getSectorForSymbol(scan.getSymbol()) + " đã chạm trần 35% NAV.");
+                    continue;
+                }
 
-                    // Kiểm tra Vi cấu trúc sổ lệnh Level-2 (Order Book Imbalance & Liquidity Walls)
+                int finalShares = sizing.getMaxSharesToBuy();
+
+                // =========================================================================
+                // 2. CHẾ ĐỘ BÓNG MỜ (SHADOW MODE): THU THẬP ĐÁNH GIÁ 6 TẦNG LỌC NÂNG CAO
+                // (Không chặn lệnh mua T1 - Ghi nhận vào DB để đối soát sau 5 & 10 phiên)
+                // =========================================================================
+                StringBuilder shadowLog = new StringBuilder();
+
+                // 2.1. Shadow CANSLIM
+                try {
+                    CanslimRatingDto canslim = canslimRatingService.rateStock(scan.getSymbol());
+                    shadowLog.append("CANSLIM=").append(canslim.isInstitutionalGrade() ? "PASS" : "VETO(" + canslim.getCanslimGrade() + ":" + canslim.getCanslimScore() + "d)").append("; ");
+                } catch (Exception e) {
+                    shadowLog.append("CANSLIM=ERR; ");
+                }
+
+                // 2.2. Shadow MTF Confluence
+                try {
+                    MultiTimeframeConfluenceDto mtf = confluenceService.analyzeMultiTimeframe(scan.getSymbol());
+                    shadowLog.append("MTF=").append(mtf.getConfluenceScore() >= 65 ? "PASS" : "VETO(" + mtf.getConfluenceScore() + "d)").append("; ");
+                } catch (Exception e) {
+                    shadowLog.append("MTF=ERR; ");
+                }
+
+                // 2.3. Shadow RRG Mansfield
+                try {
+                    RrgItemDto rrg = relativeRotationGraphService.calculateSingleStockRrg(scan.getSymbol());
+                    if (rrg != null) {
+                        boolean isToxicLagging = "LAGGING".equals(rrg.getQuadrant()) && "SOUTHWEST".equals(rrg.getHeadingDirection());
+                        shadowLog.append("RRG=").append(isToxicLagging ? "VETO_LAGGING_SW" : rrg.getQuadrant()).append("; ");
+                    } else {
+                        shadowLog.append("RRG=NONE; ");
+                    }
+                } catch (Exception e) {
+                    shadowLog.append("RRG=ERR; ");
+                }
+
+                // 2.4. Shadow OBI Level-2
+                try {
                     OrderBookImbalanceDto obi = orderBookImbalanceService.analyzeMicrostructure(scan.getSymbol());
                     if (obi != null) {
-                        if ("ASK_WALL_RESISTANCE".equals(obi.getWallDetected()) && obi.getWallProportionPercent() != null && obi.getWallProportionPercent().doubleValue() >= 45.0) {
-                            BigDecimal wallPrice = obi.getWallPrice() != null ? obi.getWallPrice() : scan.getPrice();
-                            if (scan.getPrice().compareTo(wallPrice) >= 0) {
-                                // Giá đã ăn thủng hoặc vượt qua tường bán! Lực cầu tổ chức hấp thụ thành công.
-                                addLog(String.format("🚀 [BREAKOUT BỨT PHÁ TƯỜNG BÁN] %s: Lực cầu tổ chức nuốt trọn tường bán %,.0f đ (%,d cp)! Kích hoạt lệnh giải ngân Breakout.",
-                                    scan.getSymbol(), wallPrice.doubleValue(), obi.getWallVolume() != null ? obi.getWallVolume() : 0));
-                                breakoutWatchlist.removeIf(item -> scan.getSymbol().equalsIgnoreCase((String) item.get("symbol")));
-                            } else {
-                                // Đưa vào hàng đợi radar rình mồi chờ nổ Vol bứt phá
-                                java.util.Map<String, Object> queueItem = new java.util.HashMap<>();
-                                queueItem.put("symbol", scan.getSymbol());
-                                queueItem.put("wallPrice", wallPrice);
-                                queueItem.put("wallVolume", obi.getWallVolume());
-                                queueItem.put("wallProportionPercent", obi.getWallProportionPercent());
-                                queueItem.put("currentPrice", scan.getPrice());
-                                BigDecimal dist = scan.getPrice().compareTo(BigDecimal.ZERO) > 0
-                                    ? wallPrice.subtract(scan.getPrice()).divide(scan.getPrice(), 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
-                                    : BigDecimal.ZERO;
-                                queueItem.put("distancePercent", dist);
-                                queueItem.put("confidenceScore", scan.getConfidenceScore());
-                                queueItem.put("status", "WAITING_BREAKOUT");
-                                queueItem.put("updatedAt", LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
-
-                                breakoutWatchlist.removeIf(item -> scan.getSymbol().equalsIgnoreCase((String) item.get("symbol")));
-                                breakoutWatchlist.add(0, queueItem);
-                                if (breakoutWatchlist.size() > 10) breakoutWatchlist.remove(breakoutWatchlist.size() - 1);
-
-                                addLog(String.format("🎯 [RADAR RÌNH MỒI BREAKOUT] %s: Chờ nổ Vol vượt tường bán %,.0f đ (%,d cp - %.1f%%). Giá hiện tại %,.0f đ (cách %.2f%%).",
-                                    scan.getSymbol(), wallPrice.doubleValue(), obi.getWallVolume() != null ? obi.getWallVolume() : 0,
-                                    obi.getWallProportionPercent().doubleValue(), scan.getPrice().doubleValue(), dist.doubleValue()));
-                                continue;
-                            }
-                        }
-                        if (obi.getOrderBookImbalanceRatio() != null && obi.getOrderBookImbalanceRatio().compareTo(BigDecimal.valueOf(-0.35)) < 0) {
-                            addLog("🛡️ [OBI FILTER] Bỏ qua " + scan.getSymbol() + ": Áp lực xả hàng vi mô (OBI = " + obi.getOrderBookImbalanceRatio() + ").");
-                            continue;
-                        }
+                        boolean isAskWall = "ASK_WALL_RESISTANCE".equals(obi.getWallDetected());
+                        boolean isNegativeObi = obi.getOrderBookImbalanceRatio() != null && obi.getOrderBookImbalanceRatio().compareTo(BigDecimal.valueOf(-0.35)) < 0;
+                        shadowLog.append("OBI=").append((isAskWall || isNegativeObi) ? "VETO_WALL" : "PASS").append("; ");
+                    } else {
+                        shadowLog.append("OBI=NONE; ");
                     }
+                } catch (Exception e) {
+                    shadowLog.append("OBI=ERR; ");
+                }
 
-                    // Kiểm tra Rủi ro Khối ngoại (FII Flow & Foreign Room)
-                    ForeignFlowRiskDto fii = foreignFlowRiskService.evaluateForeignFlowRisk(scan.getSymbol());
-                    if (fii != null && "HIGH_LIQUIDITY_TRAP".equals(fii.getSlippageRiskIndex())) {
-                        addLog("🛡️ [FII FLOW TRAP] Bỏ qua " + scan.getSymbol() + ": Rủi ro khối ngoại bán tháo hoặc bẫy thanh khoản.");
-                        continue;
+                // 2.5. Shadow Spoofing Detector
+                try {
+                    SpoofingDetectorDto spoofing = spoofingDetectorService.detectSpoofing(scan.getSymbol());
+                    if (spoofing != null) {
+                        shadowLog.append("SPOOFING=").append(!spoofing.isSafeToBuy() ? "VETO(" + spoofing.getLayeringPattern() + ")" : "PASS").append("; ");
+                    } else {
+                        shadowLog.append("SPOOFING=NONE; ");
                     }
+                } catch (Exception e) {
+                    shadowLog.append("SPOOFING=ERR; ");
+                }
 
-                    // Kiểm tra Bẫy Kê Lệnh Ảo (Spoofing / Phantom Bid Wall)
-                    try {
-                        SpoofingDetectorDto spoofing = spoofingDetectorService.detectSpoofing(scan.getSymbol());
-                        if (spoofing != null && !spoofing.isSafeToBuy()) {
-                            if (botDecisionAuditService != null) {
-                                botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "SPOOFING", spoofing.getLayeringPattern(), scan.getConfidenceScore());
-                            }
-                            addLog("🛡️ [BẪY KÊ MUA ẢO] Bỏ qua " + scan.getSymbol() + ": Phát hiện " + spoofing.getLayeringPattern() + " (Điểm thao túng " + spoofing.getSpoofingRiskScore() + "/100). Nguy cơ xả hàng Bull Trap.");
-                            continue;
-                        }
-                    } catch (Exception e) {
-                        log.debug("Bỏ qua kiểm tra spoofing cho {}: {}", scan.getSymbol(), e.getMessage());
+                // 2.6. Shadow Kalman Velocity
+                try {
+                    KalmanFilterTrendDto kalman = kalmanFilterTrendService.analyzeKalmanTrend(scan.getSymbol());
+                    if (kalman != null) {
+                        shadowLog.append("KALMAN=").append("BEARISH_DOWNWARD".equals(kalman.getTrendRegime()) ? "VETO_BEAR" : "PASS").append("; ");
+                    } else {
+                        shadowLog.append("KALMAN=NONE; ");
                     }
+                } catch (Exception e) {
+                    shadowLog.append("KALMAN=ERR; ");
+                }
 
-                    // Kiểm tra Vận tốc Xu hướng Bộ Lọc Kalman 2-D (Khử trễ)
-                    try {
-                        KalmanFilterTrendDto kalman = kalmanFilterTrendService.analyzeKalmanTrend(scan.getSymbol());
-                        if (kalman != null && "BEARISH_DOWNWARD".equals(kalman.getTrendRegime())) {
-                            if (botDecisionAuditService != null) {
-                                botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "KALMAN_VELOCITY", "Vận tốc xu hướng đang rơi tự do (" + kalman.getPriceVelocity() + " đ/phiên)", scan.getConfidenceScore());
-                            }
-                            addLog("🛡️ [BỘ LỌC KALMAN KHỬ TRỄ] Bỏ qua " + scan.getSymbol() + ": Vận tốc xu hướng đang rơi tự do (" + kalman.getPriceVelocity() + " đ/phiên). Không bắt dao rơi.");
-                            continue;
-                        }
-                    } catch (Exception e) {
-                        log.debug("Bỏ qua kiểm tra Kalman cho {}: {}", scan.getSymbol(), e.getMessage());
-                    }
+                // 2.7. Shadow Smart Money & Liquidity
+                try {
+                    SmartMoneyFlowDto smf = smartMoneyFlowService.analyzeSmartMoney(scan.getSymbol());
+                    shadowLog.append("SMF=").append(smf.getAccumulationScore() >= 40 ? "PASS" : "VETO(" + smf.getAccumulationScore() + "d)").append("; ");
+                } catch (Exception e) {
+                    shadowLog.append("SMF=ERR; ");
+                }
 
+                try {
+                    LiquidityAdjustedReturnDto liq = liquidityAdjustedReturnService.calculateLiquidityAdjustedReturn(
+                        scan.getSymbol(), finalShares, scan.getPrice(), scan.getTargetPrice(), accountCapital);
+                    shadowLog.append("LIQ=").append(liq.isLiquidEnough() ? "PASS" : "VETO_ILLIQUID");
+                } catch (Exception e) {
+                    shadowLog.append("LIQ=ERR");
+                }
 
-                    // Tính Ngưỡng Cắt Lỗ Động Co Giãn GARCH(1,1) theo chu kỳ T+2.5 chuẩn bước giá sàn
-                    BigDecimal stopLossPrice = scan.getStopLoss();
-                    BigDecimal targetPrice = scan.getTargetPrice();
-                    try {
-                        GarchVolatilityForecastDto garch = garchVolatilityForecastService.forecastVolatility(scan.getSymbol());
-                        if (garch != null && garch.getDynamicT25StopLossPercent() != null) {
-                            BigDecimal garchSlPct = garch.getDynamicT25StopLossPercent();
-                            stopLossPrice = QuantitativeStrategyEngine.roundToVietnameseTick(
-                                scan.getPrice().multiply(BigDecimal.ONE.subtract(garchSlPct.divide(BigDecimal.valueOf(100), 4, RoundingMode.HALF_UP)))
-                            );
-                            // Mục tiêu chốt lời tối thiểu 2.0x rủi ro (R:R >= 2:1)
-                            BigDecimal riskDist = scan.getPrice().subtract(stopLossPrice);
-                            targetPrice = QuantitativeStrategyEngine.roundToVietnameseTick(
-                                scan.getPrice().add(riskDist.multiply(BigDecimal.valueOf(2.0)))
-                            );
-                        }
-                    } catch (Exception e) {
-                        log.debug("Bỏ qua tính stop loss GARCH cho {}: {}", scan.getSymbol(), e.getMessage());
-                    }
+                String shadowEvaluation = shadowLog.toString();
+                addLog(String.format("🕵️ [SHADOW MODE AUDIT] %s: Kích hoạt mua theo T1 Core. Phán quyết bóng mờ: [%s] (Không chặn lệnh, lưu vào DB để đối soát 5-10 phiên sau)",
+                    scan.getSymbol(), shadowEvaluation));
 
-                    // Tầng định lượng cuối: Adaptive Position Sizing (ATR + Kelly + Regime + Vol)
-                    // Tích hợp như một lớp cap bảo thủ: lấy min(risk_based, adaptive_based)
-                    int finalShares = sizing.getMaxSharesToBuy();
-                    try {
-                        AdaptivePositionSizingDto adaptiveSize = adaptivePositionSizingService.calculateAdaptiveSize(
-                            scan.getSymbol(), accountCapital);
-                        if (adaptiveSize.getAdaptiveSharesToBuy() == 0 && adaptiveSize.getAdaptiveAllocationPercent().doubleValue() == 0) {
-                            // Regime BEAR hoặc Kelly Edge âm → Adaptive sizing block hoàn toàn
-                            addLog("🛡️ [ADAPTIVE SIZING LOCKOUT] Bỏ qua " + scan.getSymbol() + ": " + adaptiveSize.getRiskWarning());
-                            continue;
-                        }
-                        if (adaptiveSize.getAdaptiveSharesToBuy() > 0) {
-                            // Lấy conservative minimum để kiểm soát rủi ro tối đa
-                            finalShares = Math.min(finalShares, adaptiveSize.getAdaptiveSharesToBuy());
-                            finalShares = Math.max(100, (finalShares / 100) * 100); // Đảm bảo lô 100 tối thiểu
-                            addLog(String.format("📐 [ADAPTIVE SIZING] %s: ATR=%.2f%% | Regime=%s | Vol=%s → %,d cp (%.2f%% NAV)",
-                                scan.getSymbol(), adaptiveSize.getAtrPercent().doubleValue(),
-                                adaptiveSize.getCurrentRegime(), adaptiveSize.getVolatilityEnvironment(),
-                                finalShares, adaptiveSize.getActualAllocationPercent().doubleValue()));
-                        }
-                    } catch (Exception e) {
-                        log.debug("Adaptive sizing fallback về RiskService sizing cho {}: {}", scan.getSymbol(), e.getMessage());
-                    }
+                // =========================================================================
+                // 3. THỰC THI KHỚP LỆNH MUA T1 CORE & GHI AUDIT
+                // =========================================================================
+                BigDecimal stopLossPrice = scan.getStopLoss();
+                BigDecimal targetPrice = scan.getTargetPrice();
 
-                    // Tầng kiểm soát thanh khoản & trượt giá thực tế (Square-Root Law + T+2.5 lockup cost)
-                    try {
-                        LiquidityAdjustedReturnDto liq = liquidityAdjustedReturnService.calculateLiquidityAdjustedReturn(
-                            scan.getSymbol(), finalShares, scan.getPrice(), targetPrice, accountCapital);
-                        if (!liq.isLiquidEnough()) {
-                            addLog(String.format("🛡️ [BẪY THANH KHOẢN] Bỏ qua %s: Cổ phiếu thuộc tier %s (ADTV ~%,.0f cp/ngày), rủi ro kẹt hàng không thể thoát lệnh.",
-                                scan.getSymbol(), liq.getLiquidityTier(), liq.getAdtvShares() != null ? liq.getAdtvShares().doubleValue() : 0));
-                            continue;
-                        }
-                        if (liq.getNetReturnPct() != null && liq.getNetReturnPct().doubleValue() < 0.5) {
-                            addLog(String.format("🛡️ [LỢI NHUẬN RÒNG ÂM] Bỏ qua %s: Lợi nhuận net sau trượt giá (%.2f%%) và phí/T+2.5 (%.2f%%) chỉ còn %.2f%% (Dưới ngưỡng biên an toàn 0.5%%)",
-                                scan.getSymbol(),
-                                liq.getTotalSlippagePct() != null ? liq.getTotalSlippagePct().doubleValue() : 0,
-                                liq.getLiquidityPenaltyPct() != null ? liq.getLiquidityPenaltyPct().doubleValue() : 0,
-                                liq.getNetReturnPct().doubleValue()));
-                            continue;
-                        }
-                        if (liq.getRecommendedLotSize() > 0 && finalShares > liq.getRecommendedLotSize() * 2) {
-                            int cappedShares = Math.max(100, ((liq.getRecommendedLotSize() * 2) / 100) * 100);
-                            if (cappedShares < finalShares) {
-                                finalShares = cappedShares;
-                                addLog(String.format("💧 [THÍCH ỨNG ADTV] Giảm khối lượng %s xuống %,d cp để không chiếm quá 3%% ADTV mỗi phiên (Tránh tạo trượt giá lớn)",
-                                    scan.getSymbol(), finalShares));
-                            }
-                        }
-                        addLog(String.format("💧 [KIỂM TOÁN THANH KHOẢN] %s: Tier %s | Trượt giá: %.2f%% | Phí & Khóa T+2.5: %.2f%% | Net Alpha: +%.2f%% | %s",
-                            scan.getSymbol(), liq.getLiquidityTier(),
-                            liq.getTotalSlippagePct() != null ? liq.getTotalSlippagePct().doubleValue() : 0,
-                            liq.getLiquidityPenaltyPct() != null ? liq.getLiquidityPenaltyPct().doubleValue() : 0,
-                            liq.getNetReturnPct() != null ? liq.getNetReturnPct().doubleValue() : 0,
-                            liq.getExecutionStrategy()));
-                    } catch (Exception e) {
-                        log.debug("Bỏ qua kiểm toán thanh khoản cho {}: {}", scan.getSymbol(), e.getMessage());
-                    }
+                TradeRequest tradeReq = TradeRequest.builder()
+                    .symbol(scan.getSymbol())
+                    .exchange(scan.getExchange())
+                    .type("buy")
+                    .tradeDate(LocalDate.now())
+                    .price(scan.getPrice())
+                    .quantity(finalShares)
+                    .strategy("T1_BREAKOUT_TREND_CORE")
+                    .stopLoss(stopLossPrice)
+                    .takeProfit(targetPrice)
+                    .reason(String.format("🤖 Bot Forward Test T1 Core | Risk: %s%% NAV | Shadow Audit: %s", dynamicRisk, shadowEvaluation))
+                    .build();
 
-                    TradeRequest tradeReq = TradeRequest.builder()
-                        .symbol(scan.getSymbol())
-                        .exchange(scan.getExchange())
-                        .type("buy")
-                        .tradeDate(LocalDate.now())
-                        .price(scan.getPrice())
-                        .quantity(finalShares)
-                        .strategy(scan.getSignalTitle() + " + SmartMoney(" + smf.getAccumulationScore() + ")")
-                        .stopLoss(stopLossPrice)
-                        .takeProfit(targetPrice)
-                        .reason("🤖 Bot định chế khớp lệnh: " + scan.getSignalDescription() + " | CANSLIM: " + canslim.getCanslimGrade() + " (" + canslim.getCanslimScore() + "đ) | Đồng thuận MTF: " + mtf.getConfluenceScore() + "/100 | Risk: " + dynamicRisk + "% NAV")
-                        .build();
+                Trade created = tradeService.createTrade(tradeReq);
+                if (botDecisionAuditService != null && created != null) {
+                    botDecisionAuditService.recordDecision(
+                        created.getSymbol(),
+                        "BUY_T1_CORE_EXECUTED",
+                        created.getPrice(),
+                        "CORE_T1_DEFCON",
+                        "Khớp lệnh theo T1 Core. Đánh giá Shadow Mode: " + shadowEvaluation,
+                        scan.getConfidenceScore()
+                    );
+                }
+                breakoutWatchlist.removeIf(item -> created != null && created.getSymbol().equalsIgnoreCase((String) item.get("symbol")));
+                todayTradesCount++;
 
-                    Trade created = tradeService.createTrade(tradeReq);
-                    if (botDecisionAuditService != null && created != null) {
-                        botDecisionAuditService.recordDecision(created.getSymbol(), "BUY_EXECUTED", created.getPrice(), "NONE", "Vượt qua tất cả tầng lọc định lượng", scan.getConfidenceScore());
-                    }
-                    breakoutWatchlist.removeIf(item -> created.getSymbol().equalsIgnoreCase((String) item.get("symbol")));
-                    todayTradesCount++;
-                    addLog(String.format("⚡ ĐÃ MỞ VỊ THẾ: Mua %d cp %s giá %s đ | SL: %s | TP: %s (R:R = 1:%s)",
+                if (created != null) {
+                    addLog(String.format("⚡ ĐÃ MỞ VỊ THẾ T1 CORE: Mua %d cp %s giá %s đ | SL: %s | TP: %s (R:R = 1:%s)",
                         created.getQuantity(), created.getSymbol(), created.getPrice(), created.getStopLoss(), created.getTakeProfit(), sizing.getRiskRewardRatio()));
 
                     try {
@@ -568,13 +494,13 @@ public class AutoTradingBotService {
                     alertService.createAlert(
                         created.getSymbol(),
                         "BOT_TRADE_EXECUTED",
-                        "🤖 [BOT KHỚP LỆNH] Đã mua " + created.getQuantity() + " cp " + created.getSymbol(),
-                        "Lệnh tự động mở theo chiến lược " + scan.getSignalTitle() + ". Quản trị rủi ro nghiêm ngặt SL 7%.",
+                        "🤖 [BOT KHỚP LỆNH T1 CORE] Đã mua " + created.getQuantity() + " cp " + created.getSymbol(),
+                        "Lệnh tự động mở theo chiến lược T1 Core Breakout + Trend. Quản trị rủi ro nghiêm ngặt SL 7%.",
                         created.getPrice(),
                         "INFO"
                     );
-                    break; // Mở 1 mã mỗi chu kỳ để tránh giải ngân ồ ạt
                 }
+                break; // Mở 1 mã mỗi chu kỳ để tránh giải ngân ồ ạt
             }
         }
 

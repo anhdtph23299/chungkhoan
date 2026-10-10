@@ -185,6 +185,22 @@ public class AutoTradingBotServiceTest {
         );
 
         when(tradeRepository.save(any(Trade.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tradeService.createTrade(any())).thenAnswer(invocation -> {
+            TradeRequest req = invocation.getArgument(0);
+            return Trade.builder()
+                .id(1L)
+                .symbol(req.getSymbol())
+                .exchange(req.getExchange())
+                .type(req.getType())
+                .tradeDate(req.getTradeDate())
+                .price(req.getPrice())
+                .quantity(req.getQuantity())
+                .strategy(req.getStrategy())
+                .stopLoss(req.getStopLoss())
+                .takeProfit(req.getTakeProfit())
+                .status("open")
+                .build();
+        });
         botService.setEnforceMarketHours(false);
     }
 
@@ -241,7 +257,7 @@ public class AutoTradingBotServiceTest {
     }
 
     @Test
-    void testExecuteBotCycle_SpoofingBullTrapBlocksBuys() {
+    void testExecuteBotCycle_SpoofingShadowModeRecordsVetoWithoutBlockingTrade() {
         StockScanResult mockScan = StockScanResult.builder()
                 .symbol("FPT")
                 .exchange("HOSE")
@@ -277,12 +293,14 @@ public class AutoTradingBotServiceTest {
 
         botService.executeBotCycle();
 
-        verify(tradeService, never()).createTrade(any());
-        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("BẪY KÊ MUA ẢO")));
+        // Theo chuẩn Shadow Mode: Không chặn lệnh T1, mở lệnh và ghi nhận Shadow Audit
+        verify(tradeService).createTrade(any());
+        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("SHADOW MODE AUDIT")));
+        verify(botDecisionAuditService).recordDecision(eq("FPT"), contains("BUY_T1_CORE"), any(), any(), contains("SPOOFING=VETO"), anyInt());
     }
 
     @Test
-    void testExecuteBotCycle_LiquidityTrapBlocksBuys() {
+    void testExecuteBotCycle_LiquidityTrapShadowModeRecordsVeto() {
         StockScanResult mockScan = StockScanResult.builder()
                 .symbol("XYZ")
                 .exchange("UPCOM")
@@ -323,12 +341,14 @@ public class AutoTradingBotServiceTest {
 
         botService.executeBotCycle();
 
-        verify(tradeService, never()).createTrade(any());
-        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("BẪY THANH KHOẢN")));
+        // Khớp lệnh T1 và ghi nhận Shadow Mode Audit
+        verify(tradeService).createTrade(any());
+        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("SHADOW MODE AUDIT")));
+        verify(botDecisionAuditService).recordDecision(eq("XYZ"), contains("BUY_T1_CORE"), any(), any(), contains("LIQ=VETO_ILLIQUID"), anyInt());
     }
 
     @Test
-    void testExecuteBotCycle_RrgLaggingSouthwestBlocksBuys() {
+    void testExecuteBotCycle_RrgLaggingSouthwestShadowModeRecordsVeto() {
         StockScanResult mockScan = StockScanResult.builder()
                 .symbol("SAD")
                 .exchange("HOSE")
@@ -344,6 +364,14 @@ public class AutoTradingBotServiceTest {
         );
         when(confluenceService.analyzeMultiTimeframe(anyString())).thenReturn(
             MultiTimeframeConfluenceDto.builder().confluenceScore(80).build()
+        );
+        when(riskService.getDynamicRiskPercent()).thenReturn(BigDecimal.valueOf(1.75));
+        when(riskService.calculatePositionSize(any())).thenReturn(
+            PositionSizingResult.builder().acceptable(true).maxSharesToBuy(1000).riskRewardRatio(BigDecimal.valueOf(2.5)).build()
+        );
+        when(riskService.isSectorAllocationAllowed(anyString(), any(), any())).thenReturn(true);
+        when(smartMoneyFlowService.analyzeSmartMoney(anyString())).thenReturn(
+            SmartMoneyFlowDto.builder().accumulationScore(75).build()
         );
 
         // Mock RRG Lagging Southwest (toxic trap)
@@ -361,7 +389,37 @@ public class AutoTradingBotServiceTest {
 
         botService.executeBotCycle();
 
+        // Khớp lệnh T1 và ghi nhận RRG Veto vào Shadow Audit
+        verify(tradeService).createTrade(any());
+        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("SHADOW MODE AUDIT")));
+        verify(botDecisionAuditService).recordDecision(eq("SAD"), contains("BUY_T1_CORE"), any(), any(), contains("RRG=VETO_LAGGING_SW"), anyInt());
+    }
+
+    @Test
+    void testExecuteBotCycle_SectorCap35BlocksBuys() {
+        StockScanResult mockScan = StockScanResult.builder()
+                .symbol("HPG")
+                .exchange("HOSE")
+                .action("STRONG_BUY")
+                .confidenceScore(85)
+                .price(BigDecimal.valueOf(28000))
+                .stopLoss(BigDecimal.valueOf(26000))
+                .targetPrice(BigDecimal.valueOf(32000))
+                .build();
+        when(strategyService.scanAllStocks()).thenReturn(List.of(mockScan));
+        when(riskService.getDynamicRiskPercent()).thenReturn(BigDecimal.valueOf(1.75));
+        when(riskService.calculatePositionSize(any())).thenReturn(
+            PositionSizingResult.builder().acceptable(true).maxSharesToBuy(1000).riskRewardRatio(BigDecimal.valueOf(2.5)).build()
+        );
+
+        // Chạm trần ngành 35% NAV
+        when(riskService.isSectorAllocationAllowed(anyString(), any(), any())).thenReturn(false);
+        when(riskService.getSectorForSymbol("HPG")).thenReturn("Thép & Vật liệu");
+
+        botService.executeBotCycle();
+
+        // Quản trị rủi ro trần ngành chặn lệnh
         verify(tradeService, never()).createTrade(any());
-        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("BẪY TỤT HẬU RRG")));
+        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("KIỂM SOÁT NGÀNH")));
     }
 }

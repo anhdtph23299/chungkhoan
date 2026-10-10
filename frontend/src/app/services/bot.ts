@@ -121,6 +121,11 @@ export interface BotStatus {
   breakoutQueue?: BreakoutItem[];
   marketDataStatus?: 'REAL' | 'STALE';
   isDataFeedHealthy?: boolean;
+  executionStrategy?: string;
+  forwardTestWinRate?: number;
+  forwardTestExpectancy?: number;
+  forwardTestClosedTradesCount?: number;
+  statusAuditMode?: string;
   targetExpectancy?: number;
   targetWinRate?: number;
   targetSharpe?: number;

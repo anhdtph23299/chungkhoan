@@ -94,12 +94,18 @@ Hệ thống áp dụng kiến trúc 4 tầng thu thập và bảo vệ dữ li�
 4. **Cơ Chế Cúp Cầu Chì Khi Mất Dữ Liệu Thật (STALE Flag)**:
    - **Tuyệt đối không dùng giá giả**: Khi toàn bộ API sàn ngắt kết nối và không có cache hợp lệ, giá lập tức trả về `null`, gán cờ `dataSource = "STALE"`. Robot dừng 100% lệnh mở mới và giao diện Frontend phát tín hiệu cảnh báo màu đỏ chói.
 
-### 2.3. Vòng lặp Robot Tự động & Ghi Vết Quyết Định (AutoTradingBot Loop & Audit)
+### 2.3. Vòng lặp Robot Tự động & Ghi Vết Quyết Định (AutoTradingBot Loop & Shadow Mode Audit)
 - Chạy nền qua Spring `@Scheduled(fixedDelay = 30000)` (mỗi 30 giây).
-- **Kiểm tra Kết Nối Dữ Liệu (Bước 0)**: Ngay đầu mỗi chu kỳ, bot kiểm tra `isMarketDataConnected()`. Nếu dữ liệu STALE, dừng toàn bộ việc quét và mở vị thế mới.
+- **Kiểm tra Kết Nối Dữ Liệu (Bước 0)**: Ngay đầu mỗi chu kỳ, bot kiểm tra `isMarketDataConnected()`. Nếu dữ liệu STALE, dừng toàn bộ việc quét và mở vị thế mới. Frontend hiện cảnh báo đỏ: *Dừng mở mới, vị thế mở cần theo dõi thủ công*.
+- **Kiến trúc Khớp Lệnh Đồng Nhất (T1 Core + DEFCON-1)**:
+  - Khớp lệnh mua dựa duy nhất trên tín hiệu **T1 Core (Breakout + Trend)** và điều kiện thị trường của Cầu chì **DEFCON-1**.
+  - Không phân mảnh hay xung đột logic giữa Backtest và Bot thực chiến.
+- **Chế Độ Bóng Mờ (Shadow Mode)**:
+  - 06 Tầng phân tích vi cấu trúc nâng cao (**CANSLIM Rating, MTF Confluence, RRG Mansfield, OBI Level-2, Spoofing Detector, Kalman Velocity**) chuyển sang chế độ Shadow Mode: **chỉ ghi nhận đánh giá `PASS` hay `VETO` vào DB mà tuyệt đối không chặn lệnh T1**.
+- **Ghi Vết Quyết Định (Bot Decision Audit & Đối Soát 5 - 10 Phiên)**:
+  - Mọi quyết định khớp lệnh hoặc từ chối đều được lưu trữ vào bảng `bot_decision_audit`.
+  - Cron Job 16:00 hàng ngày tự động điền giá thực tế sau 5 phiên (`price_after_5_sessions`) và sau 10 phiên (`price_after_10_sessions`) để làm cơ sở khoa học kiểm chứng xem từng tầng vi cấu trúc có thực sự tạo ra Alpha hay không.
 - **Kiểm tra Khung giờ Sàn**: Tự động nhận diện giờ giao dịch HOSE/HNX (09:00 - 11:30 và 13:00 - 14:45 từ Thứ 2 đến Thứ 6). Ngoài giờ giao dịch, bot chỉ cập nhật định giá danh mục, **tuyệt đối không mở lệnh ảo ban đêm**.
-- **Cầu chì Defcon-1**: Tự động phong tỏa 100% lệnh mua mới khi chỉ số toàn sàn sụt giảm mạnh hoặc chạm mức lỗ tối đa ngày (Circuit Breaker).
-- **Ghi Vết Quyết Định (Bot Decision Audit)**: Toàn bộ quyết định (kể cả khi bị tầng lọc loại) đều được ghi vào bảng `bot_decision_audit`. Hệ thống tự động đối soát giá nến 5 phiên sau để đo lường xem việc từ chối đó là đúng đắn (giữ an toàn vốn) hay bỏ lỡ cơ hội.
 
 ### 2.4. Lưu trữ Cơ sở Dữ liệu (H2 File Persistence)
 - Cơ sở dữ liệu: `jdbc:h2:file:./data/vntrade_db;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE`.

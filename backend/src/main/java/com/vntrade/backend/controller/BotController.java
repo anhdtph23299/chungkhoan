@@ -66,6 +66,8 @@ public class BotController {
         status.put("maxDrawdownThreshold", botService.getMaxDrawdownThreshold());
         status.put("riskPerTradePercent", botService.getRiskPerTradePercent());
         status.put("cycleLabel", botService.getCycleLabel());
+        status.put("executionStrategy", botService.getExecutionStrategy());
+        status.put("forwardTestClosedTradesCount", botService.getForwardTestClosedTradesCount());
         return ResponseEntity.ok(status);
     }
 

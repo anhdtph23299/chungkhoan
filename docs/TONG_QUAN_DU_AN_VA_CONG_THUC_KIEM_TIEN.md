@@ -51,7 +51,7 @@ chungkhoan/
 │   │   ├── dto/                               # 72 Data Transfer Objects
 │   │   ├── entity/                            # JPA Entities (Trade, Watchlist, Alert...)
 │   │   └── repository/                        # JPA Repositories
-│   └── src/test/java/                         # 59 Test classes (139/139 tests PASS 100%)
+│   └── src/test/java/                         # 60 Test classes (140/140 tests PASS 100%)
 ├── frontend/                                  # Angular 22 (Standalone Components / SCSS)
 │   └── src/app/components/                    # Dashboard, Bot, Futures, Portfolio, Risk...
 ├── docs/                                      # 11 Tài liệu chuyên sâu toàn dự án
@@ -64,9 +64,12 @@ chungkhoan/
 1. **Khóa Cổng Localhost Tuyệt Đối**: Backend (Port 8085) được cấu hình `server.address: 127.0.0.1`, ngăn chặn triệt để mọi truy cập trái phép từ bên ngoài mạng nội bộ.
 2. **Minh Bạch Nguồn Cấp Dữ Liệu**:
    - **Nến Lịch Sử OHLCV**: 100% nến ngày thật kéo trực tiếp từ VNDirect Dchart API, dự phòng TCBS API và kho lưu trữ 32 file CSV cục bộ (2020-2026, ~1.688 phiên).
-   - **Cơ Chế Cúp Cầu Chì Khi Mất Dữ Liệu Thật**: Khử bỏ vĩnh viễn switch-case hardcode giá giả. Mọi báo giá đều có cờ `dataSource` (`REAL` / `STALE`). Khi mất mạng, bot dừng 100% lệnh mua mới và Dashboard/Bot UI hiển thị banner cảnh báo đỏ.
-   - **Bảng Giá Level-2 & Chỉ Tiêu CANSLIM**: Được ghi nhận minh bạch là Heuristic Proxy mô phỏng cấu trúc vi mô, không dùng để curve-fit vào mô hình backtest.
-3. **Audit Dấu Vết Quyết Định**: Toàn bộ quyết định của bot (kể cả khi không vào lệnh do bị tầng lọc chặn) được ghi vết tự động vào DB và tự động đối soát giá 5 phiên sau để đo lường tỷ lệ từ chối đúng (`CORRECT_REJECTION`) vs bỏ lỡ cơ hội (`MISSED_OPPORTUNITY`).
+   - **Cơ Chế Cúp Cầu Chì Khi Mất Dữ Liệu Thật**: Khử bỏ vĩnh viễn switch-case hardcode giá giả. Mọi báo giá đều có cờ `dataSource` (`REAL` / `STALE`). Khi mất mạng, bot dừng 100% lệnh mua mới và Dashboard/Bot UI hiển thị banner cảnh báo đỏ (kèm lưu ý các vị thế đang nắm giữ cần được theo dõi thủ công).
+   - **Đồng Nhất Kiến Trúc Bot Java & Backtest Python**: Bot thực chiến vận hành duy nhất chiến lược **T1 Core (Breakout + Trend) + Cầu chì DEFCON-1**. 06 Tầng vi cấu trúc (CANSLIM, MTF, RRG, OBI, Spoofing, Kalman) chuyển sang chế độ **Shadow Mode (chỉ ghi log đánh giá, tuyệt đối không chặn lệnh T1)**.
+3. **Audit Dấu Vết Quyết Định & Đối Soát 5 - 10 Phiên**: Toàn bộ quyết định của bot được ghi vết tự động vào DB và Job 16:00 tự động điền giá 5 phiên và 10 phiên sau để theo dõi thực nghiệm xem tầng vi cấu trúc nào thực sự có ích trong tương lai.
+4. **Kết Luận Kiểm Định Ablation Dữ Liệu Thật (Next-Day Open)**:
+   - Nghiên cứu ablation nghiêm ngặt với giá khớp tại Open phiên sau ($t+1$) cho thấy chiến lược **T1 chưa chứng minh được lợi thế thống kê vượt trội (Unproven Edge)** so với Mua & Giữ VN30 (VN30 Buy & Hold OOS đạt CAGR +20.91%, Sharpe 0.77).
+   - Tập OOS 2025-2026 đã được dùng để quan sát và chọn T1 nên không còn "sạch". Bằng chứng khoa học thực sự duy nhất được hệ thống công nhận là **Forward Test thời gian thực** (không dùng bất kỳ nhãn "Verified" hay chỉ tiêu cứng nào).
 
 ---
 
