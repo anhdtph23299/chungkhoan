@@ -60,6 +60,12 @@ public class BotController {
         status.put("breakoutQueue", botService.getBreakoutWatchlist());
         status.put("marketDataStatus", botService.getMarketDataStatus());
         status.put("isDataFeedHealthy", botService.isDataFeedHealthy());
+        status.put("targetExpectancy", botService.getTargetExpectancy());
+        status.put("targetWinRate", botService.getTargetWinRate());
+        status.put("targetSharpe", botService.getTargetSharpe());
+        status.put("maxDrawdownThreshold", botService.getMaxDrawdownThreshold());
+        status.put("riskPerTradePercent", botService.getRiskPerTradePercent());
+        status.put("cycleLabel", botService.getCycleLabel());
         return ResponseEntity.ok(status);
     }
 

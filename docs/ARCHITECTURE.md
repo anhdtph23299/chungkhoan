@@ -15,11 +15,11 @@ graph TD
         SSI["SSI Financial API (Dự phòng)"]
     end
 
-    subgraph Backend ["Backend: Spring Boot 3.3.5 (Java 21)"]
-        Ingestion["StockPriceService / CandleDataService<br/>(Cache TTL 60s, Auto Fallback)"]
+    subgraph Backend ["Backend: Spring Boot 3.3.5 (Java 21) - Port 8085 [127.0.0.1]"]
+        Ingestion["StockPriceService / CandleDataService<br/>(Cache TTL 60s, 32 CSV Offline, STALE Flag)"]
         QuantEngine["Quantitative Engine<br/>• CANSLIM • VCP • Kalman • GARCH<br/>• RRG Mansfield • OBI • Spoofing"]
         RiskEngine["Risk & Portfolio Engine<br/>• Anti-Martingale • T+2.5 Gatekeeper<br/>• Dynamic Stop-Loss • Sector Cap 35%"]
-        AutoBot["AutoTradingBotService<br/>(Scheduled 30s Loop, Circuit Breaker)"]
+        AutoBot["AutoTradingBotService & BotDecisionAuditService<br/>(Scheduled 30s Loop, Circuit Breaker, 5-Session Audit)"]
         SSEHub["SseStreamService<br/>(Broadcast Ticks, Logs, Trade Events)"]
         H2DB[("H2 Database File<br/>jdbc:h2:file:./data/vntrade_db")]
     end
@@ -62,8 +62,8 @@ Toàn bộ hơn 67 dịch vụ chuyên sâu được tổ chức gọn gàng th�
    - `StrategyService`, `QuantitativeStrategyEngine`, `VN30SignalScreenerService`, `CanslimRatingService`, `VcpPatternDetectorService`, `OversoldBounceDetectorService`, `OrderBookImbalanceService`, `SectorRotationService`, `SmartMoneyFlowService`, `PreMarketSentimentService`, `MarketRegimeDetectionService`, `RegimeSwitchingSignalService`, `MultiTimeframeConfluenceService`, `MicrostructureSpoofingDetectorService`, `StrategyOptimizerService`.
 
 3. **`com.vntrade.backend.service.execution`** *(Tầng Điều Phối Khớp Lệnh & Vận Hành Bot Cơ Sở)*:
-   - Quản lý vòng đời lệnh mua bán, phân bổ quy mô vốn (Position Sizing) và tài khoản:
-   - `AutoTradingBotService`, `TradeService`, `BotConfigService`, `DailyIncomeService`, `MarketSimulationService`, `AdaptivePositionSizingService`, `KellyCriterionService`, `TargetVolatilityScalingService`, `AtcExecutionService`, `OrderExecutionAlgorithmService`, `IntradayVwapTwapExecutionService`, `AlmgrenChrissExecutionService`.
+   - Quản lý vòng đời lệnh mua bán, phân bổ quy mô vốn (Position Sizing), tài khoản và audit quyết định:
+   - `AutoTradingBotService`, `BotDecisionAuditService`, `TradeService`, `BotConfigService`, `DailyIncomeService`, `MarketSimulationService`, `AdaptivePositionSizingService`, `KellyCriterionService`, `TargetVolatilityScalingService`, `AtcExecutionService`, `OrderExecutionAlgorithmService`, `IntradayVwapTwapExecutionService`, `AlmgrenChrissExecutionService`.
 
 4. **`com.vntrade.backend.service.risk`** *(Tầng Quản Trị Rủi Ro & Phòng Hộ Kỷ Luật)*:
    - Cầu chì an toàn, phòng vệ sập sàn, kiểm soát trần ngành 35% NAV và kiểm toán kỷ luật già làng:
@@ -83,21 +83,23 @@ Toàn bộ hơn 67 dịch vụ chuyên sâu được tổ chức gọn gàng th�
 8. **`com.vntrade.backend.service.portfolio`** *(Tầng Danh Mục, Nhật Ký & Lịch Trình)*:
    - `PortfolioHistoryService`, `JournalService`, `WatchlistService`, `AlertService`, `MarketSchedulerService`.
 
-### 2.2. Cơ chế Thu thập Dữ liệu & Khử Lỗi Bị Chặn (Market Ingestion Pipeline)
-Trước đây, các API từ TCBS hoặc SSI thường xuất hiện cơ chế kiểm soát bot (Cloudflare Captcha/403/404) khi gọi trực tiếp từ backend tự động. 
-Hệ thống giải quyết triệt để thông qua kiến trúc phân tầng:
+### 2.2. Cơ chế Thu thập Dữ liệu & An Toàn Báo Giá (Market Ingestion Pipeline)
+Hệ thống áp dụng kiến trúc 4 tầng thu thập và bảo vệ dữ liệu giá thật:
 1. **Ưu tiên 1 - VNDirect Dchart API (`https://dchart-api.vndirect.com.vn/dchart/history`)**:
-   - Truy vấn nến lịch sử và chỉ số thị trường (VNINDEX, VN30, HNX, UPCOM) kèm HTTP Headers giả lập trình duyệt chuẩn (`User-Agent`, `Accept: */*`).
-   - Tự động chuẩn hóa hệ số giá (nến có đơn vị nghìn đồng nhân với scale 1,000 để đưa về đồng VNĐ).
-2. **Bộ đệm In-Memory Cache (TTL 60s)**:
-   - Toàn bộ dữ liệu giá và chỉ số thị trường được lưu cache trong RAM trong 60 giây. Giảm thiểu 95% số lượng request ra ngoài internet, tránh bị giới hạn băng thông (Rate-Limit).
-3. **Bộ đệm Tham chiếu Dự phòng (Reference Fallback)**:
-   - Trong trường hợp ngắt mạng internet hoàn toàn, hệ thống fallback về giá tham chiếu thực tế phiên gần nhất của rổ VN30, đảm bảo giao diện không bao giờ bị sập hoặc báo lỗi 500.
+   - Truy vấn nến lịch sử và chỉ số thị trường (VNINDEX, VN30, HNX, UPCOM) kèm HTTP Headers giả lập trình duyệt chuẩn (`User-Agent`, `Accept: */*`). Tự động quy đổi tỷ lệ giá về đơn vị đồng (VNĐ).
+2. **Ưu tiên 2 - TCBS Public API**:
+   - Nạp dữ liệu bars nến ngày bổ trợ khi VNDirect gặp sự cố gián đoạn.
+3. **Ưu tiên 3 - Kho Nến Thật Cục Bộ 32 File CSV (2020 - 2026)**:
+   - Nạp trực tiếp từ `backend/data/historical_data/{symbol}.csv` chứa 1.688 phiên nến thật đã được tải về và lưu trữ ngoại tuyến. Đảm bảo chạy backtest và phân tích độc lập 100% không phụ thuộc internet sống.
+4. **Cơ Chế Cúp Cầu Chì Khi Mất Dữ Liệu Thật (STALE Flag)**:
+   - **Tuyệt đối không dùng giá giả**: Khi toàn bộ API sàn ngắt kết nối và không có cache hợp lệ, giá lập tức trả về `null`, gán cờ `dataSource = "STALE"`. Robot dừng 100% lệnh mở mới và giao diện Frontend phát tín hiệu cảnh báo màu đỏ chói.
 
-### 2.3. Vòng lặp Robot Tự động (AutoTradingBot Loop)
+### 2.3. Vòng lặp Robot Tự động & Ghi Vết Quyết Định (AutoTradingBot Loop & Audit)
 - Chạy nền qua Spring `@Scheduled(fixedDelay = 30000)` (mỗi 30 giây).
+- **Kiểm tra Kết Nối Dữ Liệu (Bước 0)**: Ngay đầu mỗi chu kỳ, bot kiểm tra `isMarketDataConnected()`. Nếu dữ liệu STALE, dừng toàn bộ việc quét và mở vị thế mới.
 - **Kiểm tra Khung giờ Sàn**: Tự động nhận diện giờ giao dịch HOSE/HNX (09:00 - 11:30 và 13:00 - 14:45 từ Thứ 2 đến Thứ 6). Ngoài giờ giao dịch, bot chỉ cập nhật định giá danh mục, **tuyệt đối không mở lệnh ảo ban đêm**.
 - **Cầu chì Defcon-1**: Tự động phong tỏa 100% lệnh mua mới khi chỉ số toàn sàn sụt giảm mạnh hoặc chạm mức lỗ tối đa ngày (Circuit Breaker).
+- **Ghi Vết Quyết Định (Bot Decision Audit)**: Toàn bộ quyết định (kể cả khi bị tầng lọc loại) đều được ghi vào bảng `bot_decision_audit`. Hệ thống tự động đối soát giá nến 5 phiên sau để đo lường xem việc từ chối đó là đúng đắn (giữ an toàn vốn) hay bỏ lỡ cơ hội.
 
 ### 2.4. Lưu trữ Cơ sở Dữ liệu (H2 File Persistence)
 - Cơ sở dữ liệu: `jdbc:h2:file:./data/vntrade_db;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE`.
@@ -120,5 +122,6 @@ Hệ thống giải quyết triệt để thông qua kiến trúc phân tầng:
 
 ## 4. Bảo Mật & Kỷ Luật Định Chế
 
-1. **Kiểm soát Truy cập & CORS**: Cấu hình CORS chặt chẽ cho phép cổng frontend `http://localhost:4200` tương tác an toàn với API backend `http://localhost:8080`.
-2. **Khóa Thanh khoản T+2.5**: Tầng Service áp dụng luật chặn cứng: các lệnh chưa nắm đủ thời hạn thanh toán T+2.5 không thể bị bán ép bởi bot, mô phỏng chính xác 100% thực tế thị trường chứng khoán cơ sở Việt Nam.
+1. **Khóa Cổng Localhost (server.address: 127.0.0.1)**: Backend lắng nghe độc quyền trên `127.0.0.1:8085`, khóa chặn 100% truy cập trái phép từ bên ngoài mạng internet vào máy chủ cục bộ.
+2. **Kiểm soát Truy cập & CORS**: Cấu hình CORS chặt chẽ cho phép cổng frontend `http://localhost:4200` tương tác an toàn với API backend `http://127.0.0.1:8085`.
+3. **Khóa Thanh khoản T+2.5 VSDC**: Tầng Service áp dụng luật chặn cứng: các lệnh chưa nắm đủ thời hạn thanh toán T+2.5 không thể bị bán ép bởi bot, mô phỏng chính xác 100% thực tế thị trường chứng khoán cơ sở Việt Nam.

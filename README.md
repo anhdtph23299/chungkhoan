@@ -63,6 +63,7 @@ Tất cả tài liệu kỹ thuật, kế hoạch tác chiến và công thức 
 5. ⚡ **[SOP Vận Hành Trực Chiến (Live Runbook)](file:///c:/Users/Windows/Desktop/chungkhoan/docs/LIVE_TRADING_RUNBOOK.md)**: Lịch trình 5 khung giờ sàn HOSE/HNX từ 08:30 đến 15:00.
 6. 🖥️ **[Cẩm Nang Tính Năng Giao Diện (Features Guide)](file:///c:/Users/Windows/Desktop/chungkhoan/docs/FEATURES_GUIDE.md)**: Hướng dẫn chi tiết từng tab màn hình Web.
 7. 🔌 **[Đặc Tả API Backend (API Reference)](file:///c:/Users/Windows/Desktop/chungkhoan/docs/API_REFERENCE.md)**: Danh mục toàn bộ REST API endpoints.
+8. 📊 **[Báo Cáo Nghiên Cứu Ablation VN30 2020-2026](file:///c:/Users/Windows/Desktop/chungkhoan/docs/BAO_CAO_ABLATION_TEST_VN30_2020_2026.md)**: Kiểm chứng khoa học In-Sample (2020-2024) vs Out-of-Sample (2025-2026) trên 100% nến thật 30 mã VN30.
 
 ### 📅 Nhật Ký & Kế Hoạch Tác Chiến Theo Ngày (Thư mục [`daily_strategies/`](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies))
 1. 📑 **[Báo Cáo Đánh Giá Ngày 1 (Bot Assessment)](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies/BOT_ASSESSMENT_REPORT.md)**: Tổng kết bảo toàn 100M vốn phiên thị trường rơi -14.42 điểm.
@@ -82,11 +83,11 @@ chungkhoan/
 │   │       ├── controller/         # 14 REST Controllers: Bot, Futures, Trades, Analysis...
 │   │       ├── entity/             # JPA Entities: Trade, PortfolioSnapshot, BotConfig...
 │   │       └── repository/         # Spring Data JPA Repositories
-│   └── src/test/java/              # 56 Test classes (129 Tests PASS 100%)
+│   └── src/test/java/              # 59 Test classes (139 Tests PASS 100%)
 ├── frontend/                       # Angular 22 Single Page Application
 │   ├── src/app/components/         # Dashboard, Bot, Futures (T+0), Portfolio, Risk, Analysis...
 │   └── src/styles.scss             # Giao diện Cyber-Quant Dark Mode
-├── docs/                           # 7 Tài liệu kỹ thuật, kiến trúc & công thức toán cốt lõi
+├── docs/                           # 9 Tài liệu kỹ thuật, kiến trúc, công thức & báo cáo Ablation
 ├── daily_strategies/               # Nhật ký giao dịch thực địa & kế hoạch tác chiến từng ngày
 └── README.md                       # Hướng dẫn khởi động nhanh
 ```

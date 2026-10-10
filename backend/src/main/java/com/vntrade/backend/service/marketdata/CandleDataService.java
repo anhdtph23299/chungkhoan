@@ -58,9 +58,14 @@ public class CandleDataService {
             candles = fetchFromTcbs(sym, days);
         }
 
-        // 3. Fallback nến mô phỏng nếu tất cả API bên ngoài bị chặn
+        // 3. Fallback đọc từ kho dữ liệu nến thật cục bộ (Historical CSV 2020-2026)
         if (candles.isEmpty()) {
-            log.warn("Using simulated candles fallback for {} (external APIs unavailable)", sym);
+            candles = fetchFromLocalCsv(sym, days);
+        }
+
+        // 4. Fallback nến mô phỏng cuối cùng nếu không có file CSV cục bộ
+        if (candles.isEmpty()) {
+            log.warn("Using simulated candles fallback for {} (external APIs and local CSV unavailable)", sym);
             candles = generateRealisticHistoricalCandles(sym, days);
         }
 
@@ -167,6 +172,68 @@ public class CandleDataService {
         } catch (Exception e) {
             log.debug("TCBS historical candle fetch failed for {}: {}", symbol, e.getMessage());
         }
+        return Collections.emptyList();
+    }
+
+    /**
+     * Nạp dữ liệu nến thật từ kho lưu trữ CSV cục bộ (Historical 2020-2026)
+     */
+    private List<Candle> fetchFromLocalCsv(String symbol, int days) {
+        String[] possiblePaths = {
+            "backend/data/historical_data/" + symbol + ".csv",
+            "data/historical_data/" + symbol + ".csv"
+        };
+
+        java.io.File file = null;
+        for (String p : possiblePaths) {
+            java.io.File f = new java.io.File(p);
+            if (f.exists() && f.isFile()) {
+                file = f;
+                break;
+            }
+        }
+
+        if (file == null) {
+            return Collections.emptyList();
+        }
+
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(file))) {
+            String line = reader.readLine(); // skip header
+            List<Candle> allCandles = new ArrayList<>();
+            while ((line = reader.readLine()) != null) {
+                if (line.isBlank()) continue;
+                String[] parts = line.split(",");
+                if (parts.length >= 6) {
+                    LocalDate d = LocalDate.parse(parts[0].trim());
+                    BigDecimal o = new BigDecimal(parts[1].trim());
+                    BigDecimal h = new BigDecimal(parts[2].trim());
+                    BigDecimal l = new BigDecimal(parts[3].trim());
+                    BigDecimal c = new BigDecimal(parts[4].trim());
+                    long v = (long) Double.parseDouble(parts[5].trim());
+
+                    allCandles.add(Candle.builder()
+                        .symbol(symbol)
+                        .date(d)
+                        .open(o)
+                        .high(h)
+                        .low(l)
+                        .close(c)
+                        .volume(v)
+                        .build()
+                    );
+                }
+            }
+
+            if (!allCandles.isEmpty()) {
+                int startIdx = Math.max(0, allCandles.size() - days);
+                List<Candle> result = new ArrayList<>(allCandles.subList(startIdx, allCandles.size()));
+                log.info("Successfully loaded {} historical candles for {} from local CSV: {}", result.size(), symbol, file.getPath());
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to load local CSV candles for {}: {}", symbol, e.getMessage());
+        }
+
         return Collections.emptyList();
     }
 

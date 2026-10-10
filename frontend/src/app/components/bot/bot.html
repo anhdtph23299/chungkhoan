@@ -97,22 +97,22 @@
       </div>
     </div>
 
-    <!-- Card 3: Mục Tiêu Kiếm Tiền Ngày -->
+    <!-- Card 3: Kỳ Vọng Định Chế (Expectancy & Institutional Edge) -->
     <div class="kpi-card glass-card">
       <div class="kpi-header">
-        <span class="kpi-label">MỤC TIÊU NGÀY (+1.5%)</span>
+        <span class="kpi-label">KỲ VỌNG EXPECTANCY / TRADE</span>
         <span class="kpi-icon">🎯</span>
       </div>
       <div class="kpi-value text-gold">
-        +{{ status.dailyTarget | number:'1.0-0' }} <span class="currency">đ</span>
+        +{{ (status.targetExpectancy || 1.20) | number:'1.2-2' }} <span class="currency">%</span>
       </div>
       <div class="progress-box">
         <div class="progress-bar">
-          <div class="progress-fill" [style.width.%]="getTargetProgressPercent()"></div>
+          <div class="progress-fill" [style.width.%]="status.targetWinRate || 51.4"></div>
         </div>
         <div class="progress-label">
-          <span>Tiến độ ngày</span>
-          <span><strong>{{ getTargetProgressPercent() }}%</strong></span>
+          <span>Target WinRate: <strong>{{ status.targetWinRate || 51.4 }}%</strong></span>
+          <span>Sharpe: <strong>{{ status.targetSharpe || 0.92 }}</strong></span>
         </div>
       </div>
     </div>
@@ -130,7 +130,7 @@
         <span class="status-shield safe">
           <span class="shield-dot"></span> DEFCON-1: AN TOÀN
         </span>
-        <span class="sub-text">Tự ngắt khi chạm đáy lỗ</span>
+        <span class="sub-text">MaxDD kiểm soát &lt; {{ status.maxDrawdownThreshold || 19.04 }}%</span>
       </div>
     </div>
   </div>

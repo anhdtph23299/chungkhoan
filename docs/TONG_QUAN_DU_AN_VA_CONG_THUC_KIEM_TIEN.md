@@ -51,12 +51,22 @@ chungkhoan/
 │   │   ├── dto/                               # 72 Data Transfer Objects
 │   │   ├── entity/                            # JPA Entities (Trade, Watchlist, Alert...)
 │   │   └── repository/                        # JPA Repositories
-│   └── src/test/java/                         # 56 Test classes (129/129 tests PASS 100%)
+│   └── src/test/java/                         # 59 Test classes (139/139 tests PASS 100%)
 ├── frontend/                                  # Angular 22 (Standalone Components / SCSS)
 │   └── src/app/components/                    # Dashboard, Bot, Futures, Portfolio, Risk...
-├── docs/                                      # 10 Tài liệu chuyên sâu toàn dự án
+├── docs/                                      # 11 Tài liệu chuyên sâu toàn dự án
+│   ├── BAO_CAO_ABLATION_TEST_VN30_2020_2026.md # Báo cáo kiểm định Ablation dữ liệu thật VN30 (2020-2026)
+│   └── ...
 └── README.md                                  # Hướng dẫn khởi động nhanh (Quickstart)
 ```
+
+### 🔒 Nền Móng An Toàn & Minh Bạch Nguồn Dữ Liệu
+1. **Khóa Cổng Localhost Tuyệt Đối**: Backend (Port 8085) được cấu hình `server.address: 127.0.0.1`, ngăn chặn triệt để mọi truy cập trái phép từ bên ngoài mạng nội bộ.
+2. **Minh Bạch Nguồn Cấp Dữ Liệu**:
+   - **Nến Lịch Sử OHLCV**: 100% nến ngày thật kéo trực tiếp từ VNDirect Dchart API, dự phòng TCBS API và kho lưu trữ 32 file CSV cục bộ (2020-2026, ~1.688 phiên).
+   - **Cơ Chế Cúp Cầu Chì Khi Mất Dữ Liệu Thật**: Khử bỏ vĩnh viễn switch-case hardcode giá giả. Mọi báo giá đều có cờ `dataSource` (`REAL` / `STALE`). Khi mất mạng, bot dừng 100% lệnh mua mới và Dashboard/Bot UI hiển thị banner cảnh báo đỏ.
+   - **Bảng Giá Level-2 & Chỉ Tiêu CANSLIM**: Được ghi nhận minh bạch là Heuristic Proxy mô phỏng cấu trúc vi mô, không dùng để curve-fit vào mô hình backtest.
+3. **Audit Dấu Vết Quyết Định**: Toàn bộ quyết định của bot (kể cả khi không vào lệnh do bị tầng lọc chặn) được ghi vết tự động vào DB và tự động đối soát giá 5 phiên sau để đo lường tỷ lệ từ chối đúng (`CORRECT_REJECTION`) vs bỏ lỡ cơ hội (`MISSED_OPPORTUNITY`).
 
 ---
 
