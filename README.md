@@ -53,8 +53,9 @@ npx ng serve --port 4200
 
 ## 📚 Hệ Thống Tài Liệu Review Toàn Diện (Documentation Sitemap)
 
-Tất cả tài liệu kỹ thuật, kế hoạch tác chiến và công thức định lượng được lưu trữ trong thư mục [`docs/`](file:///c:/Users/Windows/Desktop/chungkhoan/docs):
+Tất cả tài liệu kỹ thuật, kế hoạch tác chiến và công thức định lượng được phân tách chuyên nghiệp thành 2 khu vực:
 
+### 🏛️ Tài Liệu Hệ Thống Cốt Lõi (Thư mục [`docs/`](file:///c:/Users/Windows/Desktop/chungkhoan/docs))
 1. 📖 **[Whitepaper & 12 Công Thức Kiếm Tiền](file:///c:/Users/Windows/Desktop/chungkhoan/docs/TONG_QUAN_DU_AN_VA_CONG_THUC_KIEM_TIEN.md)**: **(Tài liệu quan trọng nhất)** Tổng quan toàn dự án và chi tiết 12 công thức toán học sinh lời.
 2. 🏛️ **[Kiến Trúc Kỹ Thuật (Architecture)](file:///c:/Users/Windows/Desktop/chungkhoan/docs/ARCHITECTURE.md)**: Thiết kế 8 sub-packages chuẩn hóa, pipeline dữ liệu VNDirect Dchart, SSE stream.
 3. 🔬 **[Toán Học Định Lượng (Quant Algorithms)](file:///c:/Users/Windows/Desktop/chungkhoan/docs/QUANT_ALGORITHMS.md)**: Kalman Filter, GARCH(1,1), Half-Kelly, Walk-Forward, Monte Carlo.
@@ -62,7 +63,11 @@ Tất cả tài liệu kỹ thuật, kế hoạch tác chiến và công thức 
 5. ⚡ **[SOP Vận Hành Trực Chiến (Live Runbook)](file:///c:/Users/Windows/Desktop/chungkhoan/docs/LIVE_TRADING_RUNBOOK.md)**: Lịch trình 5 khung giờ sàn HOSE/HNX từ 08:30 đến 15:00.
 6. 🖥️ **[Cẩm Nang Tính Năng Giao Diện (Features Guide)](file:///c:/Users/Windows/Desktop/chungkhoan/docs/FEATURES_GUIDE.md)**: Hướng dẫn chi tiết từng tab màn hình Web.
 7. 🔌 **[Đặc Tả API Backend (API Reference)](file:///c:/Users/Windows/Desktop/chungkhoan/docs/API_REFERENCE.md)**: Danh mục toàn bộ REST API endpoints.
-8. 📑 **[Báo Cáo Đánh Giá Ngày 1 (Bot Assessment)](file:///c:/Users/Windows/Desktop/chungkhoan/docs/BOT_ASSESSMENT_REPORT.md)**: Tổng kết bảo toàn 100M vốn phiên thị trường rơi -14.42 điểm.
+
+### 📅 Nhật Ký & Kế Hoạch Tác Chiến Theo Ngày (Thư mục [`daily_strategies/`](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies))
+1. 📑 **[Báo Cáo Đánh Giá Ngày 1 (Bot Assessment)](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies/BOT_ASSESSMENT_REPORT.md)**: Tổng kết bảo toàn 100M vốn phiên thị trường rơi -14.42 điểm.
+2. 📝 **[Nhật Ký Thực Địa Ngày 1 (08/10/2026)](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies/NHAT_KY_KINH_NGHIEM_NGAY_08_10_2026.md)**: Bài học nhóm Dầu khí, bẫy sổ lệnh OBI và tâm lý xả hàng T+2.5.
+3. 🎯 **[Chiến Lược Tác Chiến Ngày 2 (09/10/2026)](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies/CHIEN_LUOC_NGAY_2_09_10_2026.md)**: Kế hoạch đối chiếu giá dầu và kích hoạt Oversold Bounce.
 
 ---
 
@@ -81,7 +86,8 @@ chungkhoan/
 ├── frontend/                       # Angular 22 Single Page Application
 │   ├── src/app/components/         # Dashboard, Bot, Futures (T+0), Portfolio, Risk, Analysis...
 │   └── src/styles.scss             # Giao diện Cyber-Quant Dark Mode
-├── docs/                           # 10 Tài liệu chuyên sâu toàn dự án
+├── docs/                           # 7 Tài liệu kỹ thuật, kiến trúc & công thức toán cốt lõi
+├── daily_strategies/               # Nhật ký giao dịch thực địa & kế hoạch tác chiến từng ngày
 └── README.md                       # Hướng dẫn khởi động nhanh
 ```
 

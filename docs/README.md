@@ -11,11 +11,14 @@ Thư mục `docs/` được tổ chức thành các chuyên đề rõ ràng, gi�
 
 | Tài liệu | Mô tả chi tiết |
 | :--- | :--- |
-| 🏛️ [**ARCHITECTURE.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/ARCHITECTURE.md) | Kiến trúc kỹ thuật Full-Stack, luồng dữ liệu thời gian thực (SSE), thiết kế module backend Spring Boot và Angular 19. |
-| 🧮 [**QUANT_ALGORITHMS.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/QUANT_ALGORITHMS.md) | Chi tiết các thuật toán định lượng: CANSLIM, VCP, RRG Mansfield, OBI Sổ lệnh, Bẫy Lái Kê Lệnh Ảo, Kalman Filter, GARCH(1,1), Half-Kelly, Deflated Sharpe Ratio. |
-| 🖥️ [**FEATURES_GUIDE.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/FEATURES_GUIDE.md) | Cẩm nang trải nghiệm và vận hành từng phân hệ: Bàn điều khiển (Dashboard), Robot Auto-Trading, Backtest Nến Thật, Quản trị Rủi ro & Nhật ký Giao dịch. |
-| 🔌 [**API_REFERENCE.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/API_REFERENCE.md) | Danh mục đầy đủ tất cả REST API endpoints, tham số truy vấn, mẫu JSON request/response và sự kiện SSE Server-Sent Events. |
-| ⏱️ [**LIVE_TRADING_RUNBOOK.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/LIVE_TRADING_RUNBOOK.md) | Quy trình vận hành thực chiến cho phiên giao dịch thực tế: Khung giờ ATO/Liên tục/ATC, checklist phiên Ngày 1 (Live Trace Day 1) và xử lý sự cố. |
+| 📖 [**TONG_QUAN_DU_AN_VA_CONG_THUC_KIEM_TIEN.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/TONG_QUAN_DU_AN_VA_CONG_THUC_KIEM_TIEN.md) | **(Master Review)** Tổng quan toàn dự án và 12 công thức toán học trade kiếm tiền thực tế. |
+| 🏛️ [**ARCHITECTURE.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/ARCHITECTURE.md) | Kiến trúc kỹ thuật 8 sub-packages chuẩn hóa, luồng dữ liệu thời gian thực (SSE), Spring Boot 3.3.5 và Angular 22. |
+| 🧮 [**QUANT_ALGORITHMS.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/QUANT_ALGORITHMS.md) | Chi tiết các thuật toán định lượng: Kalman Filter, GARCH(1,1), Half-Kelly, DSR, VCP, RRG Mansfield, OBI Sổ lệnh. |
+| 💰 [**CHIEN_LUOC_MONETIZATION_VA_HIEN_TRANG.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/CHIEN_LUOC_MONETIZATION_VA_HIEN_TRANG.md) | 4 mô hình kinh doanh tạo dòng tiền bền vững (Proprietary Trading, VIP Telegram Signals, Broker IB, Copy-Trading). |
+| 🖥️ [**FEATURES_GUIDE.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/FEATURES_GUIDE.md) | Cẩm nang trải nghiệm và vận hành từng phân hệ: Dashboard, Phái sinh VN30F (T+0), Bot Trading, Portfolio, Risk. |
+| 🔌 [**API_REFERENCE.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/API_REFERENCE.md) | Danh mục đầy đủ tất cả REST API endpoints, tham số truy vấn, mẫu JSON request/response và sự kiện SSE. |
+| ⏱️ [**LIVE_TRADING_RUNBOOK.md**](file:///c:/Users/Windows/Desktop/chungkhoan/docs/LIVE_TRADING_RUNBOOK.md) | Quy trình vận hành thực chiến cho phiên giao dịch thực tế: Khung giờ ATO/Liên tục/ATC và xử lý sự cố. |
+| 📅 [**daily_strategies/**](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies) | **(Thư mục riêng)** Hồ sơ nhật ký giao dịch thực địa, bài học thị trường và kế hoạch tác chiến theo từng ngày. |
 
 ---
 

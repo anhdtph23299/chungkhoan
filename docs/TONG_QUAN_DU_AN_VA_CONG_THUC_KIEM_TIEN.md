@@ -6,20 +6,27 @@
 
 ## PHẦN 1: BẢN ĐỒ TÀI LIỆU DỰ ÁN (DOCUMENTATION MAP)
 
-Dưới đây là bảng chỉ dẫn toàn bộ 10 tài liệu kỹ thuật và cẩm nang vận hành được lưu trữ trong thư mục [`docs/`](file:///c:/Users/Windows/Desktop/chungkhoan/docs):
+Dưới đây là bảng chỉ dẫn toàn bộ hệ thống tài liệu dự án được phân tách chuyên nghiệp thành 2 khu vực: **Tài Liệu Hệ Thống Cốt Lõi** (`docs/`) và **Nhật Ký Tác Chiến Theo Ngày** (`daily_strategies/`):
+
+### 1. Tài Liệu Hệ Thống Cốt Lõi (Lưu trữ tại [`docs/`](file:///c:/Users/Windows/Desktop/chungkhoan/docs))
 
 | STT | Tài Liệu | Đường Dẫn File | Mục Đích & Nội Dung Chính |
 | :---: | :--- | :--- | :--- |
-| 1 | **Master Review & Công Thức** | [`TONG_QUAN_DU_AN_VA_CONG_THUC_KIEM_TIEN.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/TONG_QUAN_DU_AN_VA_CONG_THUC_KIEM_TIEN.md) | **(File Hiện Tại)** Tổng quan toàn dự án, vị trí tài liệu và tập hợp 12 công thức trade kiếm tiền thực tế. |
-| 2 | **Kiến Trúc Kỹ Thuật** | [`ARCHITECTURE.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/ARCHITECTURE.md) | Kiến trúc tổng thể Client-Server, phân chia 8 sub-packages chuẩn hóa, pipeline dữ liệu VNDirect Dchart, cơ chế SSE và H2 Persistence. |
-| 3 | **Toán Học & Thuật Toán** | [`QUANT_ALGORITHMS.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/QUANT_ALGORITHMS.md) | Cơ sở toán học chuyên sâu: Bộ lọc Kalman, GARCH(1,1), Half-Kelly, Trượt giá Square-Root Law, Deflated Sharpe Ratio (DSR), Monte Carlo. |
-| 4 | **Chiến Lược Kiếm Tiền Thật** | [`CHIEN_LUOC_MONETIZATION_VA_HIEN_TRANG.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/CHIEN_LUOC_MONETIZATION_VA_HIEN_TRANG.md) | Đánh giá hiện trạng và 4 mô hình thương mại hóa: Tự doanh thuật toán, Bán tín hiệu VIP Telegram, Môi giới IB Affiliate, Copy-Trading. |
+| 1 | **Master Review & 12 Công Thức** | [`TONG_QUAN_DU_AN_VA_CONG_THUC_KIEM_TIEN.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/TONG_QUAN_DU_AN_VA_CONG_THUC_KIEM_TIEN.md) | **(File Hiện Tại)** Tổng quan toàn dự án, sitemap tài liệu và 12 công thức toán học trade kiếm tiền thực tế. |
+| 2 | **Kiến Trúc Kỹ Thuật (Architecture)** | [`ARCHITECTURE.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/ARCHITECTURE.md) | Kiến trúc Client-Server, phân chia 8 sub-packages chuẩn hóa, pipeline dữ liệu VNDirect Dchart, SSE stream và H2. |
+| 3 | **Toán Học & Thuật Toán (Quant)** | [`QUANT_ALGORITHMS.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/QUANT_ALGORITHMS.md) | Cơ sở toán học chuyên sâu: Kalman Filter, GARCH(1,1), Half-Kelly, Trượt giá Square-Root Law, DSR, Monte Carlo. |
+| 4 | **Chiến Lược Kiếm Tiền (Monetization)** | [`CHIEN_LUOC_MONETIZATION_VA_HIEN_TRANG.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/CHIEN_LUOC_MONETIZATION_VA_HIEN_TRANG.md) | Đánh giá hiện trạng và 4 mô hình thương mại hóa: Tự doanh thuật toán, Bán tín hiệu VIP Telegram, Môi giới IB, Copy-Trading. |
 | 5 | **Hướng Dẫn Tính Năng UI** | [`FEATURES_GUIDE.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/FEATURES_GUIDE.md) | Hướng dẫn chi tiết từng màn hình Dashboard, Watchlist, Portfolio, Journal, Analysis, Risk, Bot Trader và Phái Sinh T+0. |
 | 6 | **Đặc Tả REST API** | [`API_REFERENCE.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/API_REFERENCE.md) | Danh mục đầy đủ các REST API endpoints của Backend (Bot, Trades, Analysis, Risk, Futures, Income, Streams...). |
 | 7 | **SOP Vận Hành Thực Chiến** | [`LIVE_TRADING_RUNBOOK.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/LIVE_TRADING_RUNBOOK.md) | Quy trình vận hành chuẩn từng khung giờ sàn HOSE/HNX (08:30 tiền trạm -> 09:00 ATO -> 11:30 nghỉ trưa -> 13:00 T+2.5 -> 14:45 ATC). |
-| 8 | **Báo Cáo Đánh Giá Ngày 1** | [`BOT_ASSESSMENT_REPORT.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/BOT_ASSESSMENT_REPORT.md) | Báo cáo kiểm chứng năng lực bảo toàn 100M vốn trong phiên thị trường sập -14.42 điểm, kích hoạt DEFCON-1. |
-| 9 | **Kế Hoạch Tác Chiến Ngày 2** | [`CHIEN_LUOC_NGAY_2_09_10_2026.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/CHIEN_LUOC_NGAY_2_09_10_2026.md) | Kế hoạch đối chiếu nhóm Dầu khí (PLX, PVT), kích hoạt vũ khí bắt đáy hoảng loạn Oversold Bounce. |
-| 10 | **Nhật Ký Kinh Nghiệm** | [`NHAT_KY_KINH_NGHIEM_NGAY_08_10_2026.md`](file:///c:/Users/Windows/Desktop/chungkhoan/docs/NHAT_KY_KINH_NGHIEM_NGAY_08_10_2026.md) | Nhật ký thực địa, phân tích tâm lý xả hàng T+2.5 của Big Boys và bài học thực tiễn. |
+
+### 2. Nhật Ký & Kế Hoạch Tác Chiến Theo Ngày (Lưu trữ riêng tại [`daily_strategies/`](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies))
+
+| STT | Hồ Sơ Tác Chiến | Đường Dẫn File | Tình Huống Phiên & Quyết Định |
+| :---: | :--- | :--- | :--- |
+| 1 | **Báo Cáo Đánh Giá Ngày 1 (08/10/2026)** | [`BOT_ASSESSMENT_REPORT.md`](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies/BOT_ASSESSMENT_REPORT.md) | Kiểm chứng năng lực bảo toàn 100M vốn trong phiên thị trường sập -14.42 điểm, kích hoạt DEFCON-1 lúc 14:44. |
+| 2 | **Nhật Ký Thực Địa Ngày 1 (08/10/2026)** | [`NHAT_KY_KINH_NGHIEM_NGAY_08_10_2026.md`](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies/NHAT_KY_KINH_NGHIEM_NGAY_08_10_2026.md) | Phân tích hiện tượng xả hàng T+2.5, mổ xẻ vì sao nhóm Dầu khí tăng mạnh nhưng thuật toán OBI chặn mua vì tường bán gom. |
+| 3 | **Kế Hoạch Tác Chiến Ngày 2 (09/10/2026)** | [`CHIEN_LUOC_NGAY_2_09_10_2026.md`](file:///c:/Users/Windows/Desktop/chungkhoan/daily_strategies/CHIEN_LUOC_NGAY_2_09_10_2026.md) | Kế hoạch đối chiếu nhóm Dầu khí (PLX, PVT), kích hoạt vũ khí bắt đáy hoảng loạn Oversold Bounce. |
 
 ---
 
