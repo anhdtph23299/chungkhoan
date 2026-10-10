@@ -1,7 +1,7 @@
 package com.vntrade.backend.controller;
 
 import com.vntrade.backend.entity.Trade;
-import com.vntrade.backend.service.AutoTradingBotService;
+import com.vntrade.backend.service.execution.AutoTradingBotService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -9,6 +9,9 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import com.vntrade.backend.service.decision.VN30SignalScreenerService;
+import com.vntrade.backend.service.execution.MarketSimulationService;
+import com.vntrade.backend.service.execution.BotConfigService;
 
 @RestController
 @RequestMapping("/api/bot")
@@ -17,9 +20,9 @@ import java.util.Map;
 public class BotController {
 
     private final AutoTradingBotService botService;
-    private final com.vntrade.backend.service.MarketSimulationService simulationService;
-    private final com.vntrade.backend.service.VN30SignalScreenerService vn30SignalScreenerService;
-    private final com.vntrade.backend.service.BotConfigService botConfigService;
+    private final com.vntrade.backend.service.execution.MarketSimulationService simulationService;
+    private final com.vntrade.backend.service.decision.VN30SignalScreenerService vn30SignalScreenerService;
+    private final com.vntrade.backend.service.execution.BotConfigService botConfigService;
 
     @GetMapping("/config")
     public ResponseEntity<com.vntrade.backend.dto.BotConfigDto> getBotConfig() {

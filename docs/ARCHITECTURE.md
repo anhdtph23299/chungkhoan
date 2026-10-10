@@ -49,12 +49,39 @@ graph TD
 
 ## 2. Tầng Backend: Spring Boot 3.3.5 & Java 21
 
-### 2.1. Phân chia Layer chuẩn mực
-Hệ thống tuân thủ chặt chẽ nguyên lý Single Responsibility và Clean Architecture:
-- **`com.vntrade.backend.controller`**: Cung cấp 13 REST Controllers nhận và xác thực request HTTP, xử lý phân trang, lọc và định tuyến.
-- **`com.vntrade.backend.service`**: Chứa hơn 60 Services định lượng độc lập, chịu trách nhiệm xử lý các mô hình toán, logic nghiệp vụ, quản lý trạng thái bot và đồng bộ dữ liệu.
-- **`com.vntrade.backend.repository`**: 5 Spring Data JPA Repositories quản lý các thực thể `Trade`, `Watchlist`, `Alert`, `BotConfig`, `CalendarEvent`.
-- **`com.vntrade.backend.dto`**: Các đối tượng truyền nhận dữ liệu bất biến (immutable data transfer objects) sử dụng Lombok Builder.
+### 2.1. Phân chia Layer chuẩn mực (Domain-Driven Modular Subpackages)
+Hệ thống tuân thủ chặt chẽ nguyên lý Single Responsibility, Clean Architecture và Modular Domain Design.
+Toàn bộ hơn 67 dịch vụ chuyên sâu được tổ chức gọn gàng thành **8 sub-packages** chuyên biệt:
+
+1. **`com.vntrade.backend.service.calculation`** *(Tầng Tính Toán & Định Lượng Chuyên Sâu)*:
+   - Chịu trách nhiệm thực hiện các mô hình toán, chỉ báo kỹ thuật, ma trận xoay tua và phân tích thống kê:
+   - `TechnicalIndicatorService`, `RelativeRotationGraphService`, `KalmanFilterTrendService`, `GarchVolatilityForecastService`, `MarkowitzOptimizationService`, `BlackLittermanAllocationService`, `MonteCarloProjectionService`, `MonteCarloBacktestStressService`, `MultiFactorAttributionService`, `BrinsonPerformanceAttributionService`, `LiquidityAdjustedReturnService`, `StatisticalArbitrageService`, `DeflatedSharpeAuditService`, `ImplementationShortfallAuditService`, `PortfolioVarRiskService`, `IntradayOrderFlowFootprintService`, `AdvancedTradingAnalyticsService`.
+
+2. **`com.vntrade.backend.service.decision`** *(Tầng Ra Quyết Định Mua/Bán & Sàng Lọc Tín Hiệu)*:
+   - Chịu trách nhiệm phân tích dữ liệu đầu vào và đưa ra kết luận dứt khoát: **MUA, BÁN hay ĐỨNG NGOÀI**:
+   - `StrategyService`, `QuantitativeStrategyEngine`, `VN30SignalScreenerService`, `CanslimRatingService`, `VcpPatternDetectorService`, `OversoldBounceDetectorService`, `OrderBookImbalanceService`, `SectorRotationService`, `SmartMoneyFlowService`, `PreMarketSentimentService`, `MarketRegimeDetectionService`, `RegimeSwitchingSignalService`, `MultiTimeframeConfluenceService`, `MicrostructureSpoofingDetectorService`, `StrategyOptimizerService`.
+
+3. **`com.vntrade.backend.service.execution`** *(Tầng Điều Phối Khớp Lệnh & Vận Hành Bot Cơ Sở)*:
+   - Quản lý vòng đời lệnh mua bán, phân bổ quy mô vốn (Position Sizing) và tài khoản:
+   - `AutoTradingBotService`, `TradeService`, `BotConfigService`, `DailyIncomeService`, `MarketSimulationService`, `AdaptivePositionSizingService`, `KellyCriterionService`, `TargetVolatilityScalingService`, `AtcExecutionService`, `OrderExecutionAlgorithmService`, `IntradayVwapTwapExecutionService`, `AlmgrenChrissExecutionService`.
+
+4. **`com.vntrade.backend.service.risk`** *(Tầng Quản Trị Rủi Ro & Phòng Hộ Kỷ Luật)*:
+   - Cầu chì an toàn, phòng vệ sập sàn, kiểm soát trần ngành 35% NAV và kiểm toán kỷ luật già làng:
+   - `RiskService`, `MarketCrashProtectionService`, `VietnamVeteranRulesService`, `BlackSwanStressScenarioService`, `ForeignFlowRiskService`, `RealMoneyAuditService`, `RiskStressTestService`.
+
+5. **`com.vntrade.backend.service.futures`** *(Tầng Giao Dịch & Chiến Lược Phái Sinh VN30F T+0)*:
+   - Động cơ phái sinh kiếm tiền 2 chiều Long/Short, bám độ lệch Basis, Trailing Stop tự động:
+   - `VN30FuturesTradingService`, `VN30FuturesStrategyEngine`, `VN30FuturesCandleService`, `VN30FuturesBacktestService`.
+
+6. **`com.vntrade.backend.service.marketdata`** *(Tầng Dữ Liệu Thị Trường & Streaming)*:
+   - Kết nối dữ liệu nến thật, báo giá cấp 2, bảng giá thời gian thực và SSE stream:
+   - `CandleDataService`, `StockPriceService`, `OrderBookService`, `SseStreamService`.
+
+7. **`com.vntrade.backend.service.backtest`** *(Tầng Kiểm Thử Định Chế & Tối Ưu Hóa)*:
+   - `BacktestService`, `InstitutionalBacktestService`, `WalkForwardOptimizationService`.
+
+8. **`com.vntrade.backend.service.portfolio`** *(Tầng Danh Mục, Nhật Ký & Lịch Trình)*:
+   - `PortfolioHistoryService`, `JournalService`, `WatchlistService`, `AlertService`, `MarketSchedulerService`.
 
 ### 2.2. Cơ chế Thu thập Dữ liệu & Khử Lỗi Bị Chặn (Market Ingestion Pipeline)
 Trước đây, các API từ TCBS hoặc SSI thường xuất hiện cơ chế kiểm soát bot (Cloudflare Captcha/403/404) khi gọi trực tiếp từ backend tự động. 

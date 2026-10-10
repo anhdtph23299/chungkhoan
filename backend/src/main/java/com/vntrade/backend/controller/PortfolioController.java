@@ -2,13 +2,14 @@ package com.vntrade.backend.controller;
 
 import com.vntrade.backend.dto.PortfolioSummary;
 import com.vntrade.backend.entity.PortfolioSnapshot;
-import com.vntrade.backend.service.PortfolioHistoryService;
-import com.vntrade.backend.service.TradeService;
+import com.vntrade.backend.service.portfolio.PortfolioHistoryService;
+import com.vntrade.backend.service.execution.TradeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.vntrade.backend.service.calculation.MarkowitzOptimizationService;
 
 @RestController
 @RequestMapping("/api/portfolio")
@@ -18,7 +19,7 @@ public class PortfolioController {
 
     private final PortfolioHistoryService portfolioHistoryService;
     private final TradeService tradeService;
-    private final com.vntrade.backend.service.MarkowitzOptimizationService markowitzService;
+    private final com.vntrade.backend.service.calculation.MarkowitzOptimizationService markowitzService;
 
     @GetMapping("/markowitz-frontier")
     public ResponseEntity<com.vntrade.backend.dto.MarkowitzEfficientFrontierDto> getMarkowitzEfficientFrontier(

@@ -5,13 +5,14 @@ import com.vntrade.backend.dto.TradeAnalytics;
 import com.vntrade.backend.dto.TradingRatiosDto;
 import com.vntrade.backend.entity.Trade;
 import com.vntrade.backend.repository.TradeRepository;
-import com.vntrade.backend.service.AdvancedTradingAnalyticsService;
-import com.vntrade.backend.service.JournalService;
+import com.vntrade.backend.service.calculation.AdvancedTradingAnalyticsService;
+import com.vntrade.backend.service.portfolio.JournalService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.vntrade.backend.service.calculation.BrinsonPerformanceAttributionService;
 
 @RestController
 @RequestMapping("/api/journal")
@@ -22,7 +23,7 @@ public class JournalController {
     private final JournalService journalService;
     private final TradeRepository tradeRepository;
     private final AdvancedTradingAnalyticsService advancedAnalyticsService;
-    private final com.vntrade.backend.service.BrinsonPerformanceAttributionService attributionService;
+    private final com.vntrade.backend.service.calculation.BrinsonPerformanceAttributionService attributionService;
 
     @GetMapping("/performance-attribution")
     public ResponseEntity<com.vntrade.backend.dto.PerformanceAttributionDto> getPerformanceAttribution() {
@@ -49,4 +50,3 @@ public class JournalController {
         return ResponseEntity.ok(advancedAnalyticsService.getFullPnLLedger());
     }
 }
-

@@ -1,7 +1,7 @@
 package com.vntrade.backend.controller;
 
 import com.vntrade.backend.dto.Candle;
-import com.vntrade.backend.service.CandleDataService;
+import com.vntrade.backend.service.marketdata.CandleDataService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

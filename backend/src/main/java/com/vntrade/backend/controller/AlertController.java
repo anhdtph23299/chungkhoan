@@ -1,7 +1,7 @@
 package com.vntrade.backend.controller;
 
 import com.vntrade.backend.entity.Alert;
-import com.vntrade.backend.service.AlertService;
+import com.vntrade.backend.service.portfolio.AlertService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

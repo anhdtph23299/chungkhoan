@@ -2,8 +2,8 @@ package com.vntrade.backend.controller;
 
 import com.vntrade.backend.dto.StockQuote;
 import com.vntrade.backend.entity.Watchlist;
-import com.vntrade.backend.service.StockPriceService;
-import com.vntrade.backend.service.WatchlistService;
+import com.vntrade.backend.service.marketdata.StockPriceService;
+import com.vntrade.backend.service.portfolio.WatchlistService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;

@@ -1,12 +1,28 @@
 package com.vntrade.backend.controller;
 
 import com.vntrade.backend.dto.StockScanResult;
-import com.vntrade.backend.service.StrategyService;
+import com.vntrade.backend.service.decision.StrategyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.vntrade.backend.service.calculation.RelativeRotationGraphService;
+import com.vntrade.backend.service.calculation.MultiFactorAttributionService;
+import com.vntrade.backend.service.decision.MarketRegimeDetectionService;
+import com.vntrade.backend.service.calculation.StatisticalArbitrageService;
+import com.vntrade.backend.service.decision.VN30SignalScreenerService;
+import com.vntrade.backend.service.execution.AdaptivePositionSizingService;
+import com.vntrade.backend.service.decision.MultiTimeframeConfluenceService;
+import com.vntrade.backend.service.decision.SectorRotationService;
+import com.vntrade.backend.service.execution.AtcExecutionService;
+import com.vntrade.backend.service.decision.RegimeSwitchingSignalService;
+import com.vntrade.backend.service.decision.VcpPatternDetectorService;
+import com.vntrade.backend.service.calculation.IntradayOrderFlowFootprintService;
+import com.vntrade.backend.service.decision.CanslimRatingService;
+import com.vntrade.backend.service.decision.OversoldBounceDetectorService;
+import com.vntrade.backend.service.decision.PreMarketSentimentService;
+import com.vntrade.backend.service.calculation.KalmanFilterTrendService;
 
 @RestController
 @RequestMapping("/api/analysis")
@@ -15,22 +31,22 @@ import java.util.List;
 public class AnalysisController {
 
     private final StrategyService strategyService;
-    private final com.vntrade.backend.service.SectorRotationService sectorRotationService;
-    private final com.vntrade.backend.service.VN30SignalScreenerService vn30SignalScreenerService;
-    private final com.vntrade.backend.service.VcpPatternDetectorService vcpDetectorService;
-    private final com.vntrade.backend.service.AtcExecutionService atcExecutionService;
-    private final com.vntrade.backend.service.MultiTimeframeConfluenceService confluenceService;
-    private final com.vntrade.backend.service.CanslimRatingService canslimRatingService;
-    private final com.vntrade.backend.service.MarketRegimeDetectionService marketRegimeService;
-    private final com.vntrade.backend.service.IntradayOrderFlowFootprintService footprintService;
-    private final com.vntrade.backend.service.MultiFactorAttributionService factorAttributionService;
-    private final com.vntrade.backend.service.StatisticalArbitrageService statisticalArbitrageService;
-    private final com.vntrade.backend.service.KalmanFilterTrendService kalmanFilterTrendService;
-    private final com.vntrade.backend.service.RegimeSwitchingSignalService regimeSwitchingSignalService;
-    private final com.vntrade.backend.service.AdaptivePositionSizingService adaptivePositionSizingService;
-    private final com.vntrade.backend.service.RelativeRotationGraphService relativeRotationGraphService;
-    private final com.vntrade.backend.service.PreMarketSentimentService preMarketSentimentService;
-    private final com.vntrade.backend.service.OversoldBounceDetectorService oversoldBounceDetectorService;
+    private final com.vntrade.backend.service.decision.SectorRotationService sectorRotationService;
+    private final com.vntrade.backend.service.decision.VN30SignalScreenerService vn30SignalScreenerService;
+    private final com.vntrade.backend.service.decision.VcpPatternDetectorService vcpDetectorService;
+    private final com.vntrade.backend.service.execution.AtcExecutionService atcExecutionService;
+    private final com.vntrade.backend.service.decision.MultiTimeframeConfluenceService confluenceService;
+    private final com.vntrade.backend.service.decision.CanslimRatingService canslimRatingService;
+    private final com.vntrade.backend.service.decision.MarketRegimeDetectionService marketRegimeService;
+    private final com.vntrade.backend.service.calculation.IntradayOrderFlowFootprintService footprintService;
+    private final com.vntrade.backend.service.calculation.MultiFactorAttributionService factorAttributionService;
+    private final com.vntrade.backend.service.calculation.StatisticalArbitrageService statisticalArbitrageService;
+    private final com.vntrade.backend.service.calculation.KalmanFilterTrendService kalmanFilterTrendService;
+    private final com.vntrade.backend.service.decision.RegimeSwitchingSignalService regimeSwitchingSignalService;
+    private final com.vntrade.backend.service.execution.AdaptivePositionSizingService adaptivePositionSizingService;
+    private final com.vntrade.backend.service.calculation.RelativeRotationGraphService relativeRotationGraphService;
+    private final com.vntrade.backend.service.decision.PreMarketSentimentService preMarketSentimentService;
+    private final com.vntrade.backend.service.decision.OversoldBounceDetectorService oversoldBounceDetectorService;
 
     @GetMapping("/pre-market-sentiment")
     public ResponseEntity<com.vntrade.backend.dto.PreMarketSentimentDto> getPreMarketSentiment() {
@@ -177,4 +193,3 @@ public class AnalysisController {
         return ResponseEntity.ok(relativeRotationGraphService.calculateSingleStockRrg(symbol));
     }
 }
-

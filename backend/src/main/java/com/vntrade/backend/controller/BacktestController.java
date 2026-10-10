@@ -2,10 +2,15 @@ package com.vntrade.backend.controller;
 
 import com.vntrade.backend.dto.BacktestRequest;
 import com.vntrade.backend.dto.BacktestResult;
-import com.vntrade.backend.service.BacktestService;
+import com.vntrade.backend.service.backtest.BacktestService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.vntrade.backend.service.decision.StrategyOptimizerService;
+import com.vntrade.backend.service.calculation.MonteCarloBacktestStressService;
+import com.vntrade.backend.service.backtest.InstitutionalBacktestService;
+import com.vntrade.backend.service.calculation.DeflatedSharpeAuditService;
+import com.vntrade.backend.service.backtest.WalkForwardOptimizationService;
 
 @RestController
 @RequestMapping("/api/backtest")
@@ -14,11 +19,11 @@ import org.springframework.web.bind.annotation.*;
 public class BacktestController {
 
     private final BacktestService backtestService;
-    private final com.vntrade.backend.service.StrategyOptimizerService strategyOptimizerService;
-    private final com.vntrade.backend.service.InstitutionalBacktestService institutionalBacktestService;
-    private final com.vntrade.backend.service.MonteCarloBacktestStressService monteCarloBacktestStressService;
-    private final com.vntrade.backend.service.DeflatedSharpeAuditService deflatedSharpeAuditService;
-    private final com.vntrade.backend.service.WalkForwardOptimizationService walkForwardOptimizationService;
+    private final com.vntrade.backend.service.decision.StrategyOptimizerService strategyOptimizerService;
+    private final com.vntrade.backend.service.backtest.InstitutionalBacktestService institutionalBacktestService;
+    private final com.vntrade.backend.service.calculation.MonteCarloBacktestStressService monteCarloBacktestStressService;
+    private final com.vntrade.backend.service.calculation.DeflatedSharpeAuditService deflatedSharpeAuditService;
+    private final com.vntrade.backend.service.backtest.WalkForwardOptimizationService walkForwardOptimizationService;
 
     @GetMapping("/walk-forward-optimization/{symbol}")
     public ResponseEntity<com.vntrade.backend.dto.WalkForwardOptimizationDto> getWalkForwardOptimization(

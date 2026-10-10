@@ -1,6 +1,6 @@
 package com.vntrade.backend.controller;
 
-import com.vntrade.backend.service.SseStreamService;
+import com.vntrade.backend.service.marketdata.SseStreamService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;

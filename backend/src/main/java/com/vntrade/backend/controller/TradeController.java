@@ -3,12 +3,19 @@ package com.vntrade.backend.controller;
 import com.vntrade.backend.dto.PortfolioSummary;
 import com.vntrade.backend.dto.TradeRequest;
 import com.vntrade.backend.entity.Trade;
-import com.vntrade.backend.service.TradeService;
+import com.vntrade.backend.service.execution.TradeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.vntrade.backend.service.execution.IntradayVwapTwapExecutionService;
+import com.vntrade.backend.service.decision.OrderBookImbalanceService;
+import com.vntrade.backend.service.decision.MicrostructureSpoofingDetectorService;
+import com.vntrade.backend.service.execution.OrderExecutionAlgorithmService;
+import com.vntrade.backend.service.execution.AlmgrenChrissExecutionService;
+import com.vntrade.backend.service.marketdata.OrderBookService;
+import com.vntrade.backend.service.calculation.ImplementationShortfallAuditService;
 
 @RestController
 @RequestMapping("/api/trades")
@@ -17,13 +24,13 @@ import java.util.List;
 public class TradeController {
 
     private final TradeService tradeService;
-    private final com.vntrade.backend.service.OrderBookService orderBookService;
-    private final com.vntrade.backend.service.OrderExecutionAlgorithmService orderExecutionAlgorithmService;
-    private final com.vntrade.backend.service.OrderBookImbalanceService orderBookImbalanceService;
-    private final com.vntrade.backend.service.ImplementationShortfallAuditService implementationShortfallAuditService;
-    private final com.vntrade.backend.service.AlmgrenChrissExecutionService almgrenChrissExecutionService;
-    private final com.vntrade.backend.service.IntradayVwapTwapExecutionService intradayVwapTwapExecutionService;
-    private final com.vntrade.backend.service.MicrostructureSpoofingDetectorService microstructureSpoofingDetectorService;
+    private final com.vntrade.backend.service.marketdata.OrderBookService orderBookService;
+    private final com.vntrade.backend.service.execution.OrderExecutionAlgorithmService orderExecutionAlgorithmService;
+    private final com.vntrade.backend.service.decision.OrderBookImbalanceService orderBookImbalanceService;
+    private final com.vntrade.backend.service.calculation.ImplementationShortfallAuditService implementationShortfallAuditService;
+    private final com.vntrade.backend.service.execution.AlmgrenChrissExecutionService almgrenChrissExecutionService;
+    private final com.vntrade.backend.service.execution.IntradayVwapTwapExecutionService intradayVwapTwapExecutionService;
+    private final com.vntrade.backend.service.decision.MicrostructureSpoofingDetectorService microstructureSpoofingDetectorService;
 
     @GetMapping("/spoofing-detector/{symbol}")
     public ResponseEntity<com.vntrade.backend.dto.SpoofingDetectorDto> detectSpoofing(@PathVariable String symbol) {

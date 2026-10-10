@@ -2,13 +2,25 @@ package com.vntrade.backend.controller;
 
 import com.vntrade.backend.dto.PositionSizingRequest;
 import com.vntrade.backend.dto.PositionSizingResult;
-import com.vntrade.backend.service.RiskService;
+import com.vntrade.backend.service.risk.RiskService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import com.vntrade.backend.service.calculation.GarchVolatilityForecastService;
+import com.vntrade.backend.service.risk.RiskStressTestService;
+import com.vntrade.backend.service.risk.VietnamVeteranRulesService;
+import com.vntrade.backend.service.calculation.LiquidityAdjustedReturnService;
+import com.vntrade.backend.service.risk.RealMoneyAuditService;
+import com.vntrade.backend.service.calculation.BlackLittermanAllocationService;
+import com.vntrade.backend.service.risk.ForeignFlowRiskService;
+import com.vntrade.backend.service.execution.TargetVolatilityScalingService;
+import com.vntrade.backend.service.risk.MarketCrashProtectionService;
+import com.vntrade.backend.service.calculation.PortfolioVarRiskService;
+import com.vntrade.backend.service.execution.KellyCriterionService;
+import com.vntrade.backend.service.risk.BlackSwanStressScenarioService;
 
 @RestController
 @RequestMapping("/api/risk")
@@ -17,18 +29,18 @@ import java.util.Map;
 public class RiskController {
 
     private final RiskService riskService;
-    private final com.vntrade.backend.service.RealMoneyAuditService realMoneyAuditService;
-    private final com.vntrade.backend.service.VietnamVeteranRulesService veteranRulesService;
-    private final com.vntrade.backend.service.MarketCrashProtectionService crashProtectionService;
-    private final com.vntrade.backend.service.KellyCriterionService kellyCriterionService;
-    private final com.vntrade.backend.service.RiskStressTestService riskStressTestService;
-    private final com.vntrade.backend.service.PortfolioVarRiskService portfolioVarRiskService;
-    private final com.vntrade.backend.service.ForeignFlowRiskService foreignFlowRiskService;
-    private final com.vntrade.backend.service.TargetVolatilityScalingService targetVolatilityScalingService;
-    private final com.vntrade.backend.service.BlackLittermanAllocationService blackLittermanAllocationService;
-    private final com.vntrade.backend.service.GarchVolatilityForecastService garchVolatilityForecastService;
-    private final com.vntrade.backend.service.BlackSwanStressScenarioService blackSwanStressScenarioService;
-    private final com.vntrade.backend.service.LiquidityAdjustedReturnService liquidityAdjustedReturnService;
+    private final com.vntrade.backend.service.risk.RealMoneyAuditService realMoneyAuditService;
+    private final com.vntrade.backend.service.risk.VietnamVeteranRulesService veteranRulesService;
+    private final com.vntrade.backend.service.risk.MarketCrashProtectionService crashProtectionService;
+    private final com.vntrade.backend.service.execution.KellyCriterionService kellyCriterionService;
+    private final com.vntrade.backend.service.risk.RiskStressTestService riskStressTestService;
+    private final com.vntrade.backend.service.calculation.PortfolioVarRiskService portfolioVarRiskService;
+    private final com.vntrade.backend.service.risk.ForeignFlowRiskService foreignFlowRiskService;
+    private final com.vntrade.backend.service.execution.TargetVolatilityScalingService targetVolatilityScalingService;
+    private final com.vntrade.backend.service.calculation.BlackLittermanAllocationService blackLittermanAllocationService;
+    private final com.vntrade.backend.service.calculation.GarchVolatilityForecastService garchVolatilityForecastService;
+    private final com.vntrade.backend.service.risk.BlackSwanStressScenarioService blackSwanStressScenarioService;
+    private final com.vntrade.backend.service.calculation.LiquidityAdjustedReturnService liquidityAdjustedReturnService;
 
     @GetMapping("/black-swan-stress")
     public ResponseEntity<com.vntrade.backend.dto.BlackSwanStressScenarioDto> getBlackSwanStressScenarios(
