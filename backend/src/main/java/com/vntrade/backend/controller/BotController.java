@@ -23,6 +23,18 @@ public class BotController {
     private final com.vntrade.backend.service.execution.MarketSimulationService simulationService;
     private final com.vntrade.backend.service.decision.VN30SignalScreenerService vn30SignalScreenerService;
     private final com.vntrade.backend.service.execution.BotConfigService botConfigService;
+    private final com.vntrade.backend.service.execution.BotDecisionAuditService auditService;
+
+    @GetMapping("/audit-summary")
+    public ResponseEntity<Map<String, Object>> getAuditSummary() {
+        return ResponseEntity.ok(auditService.getAuditSummary());
+    }
+
+    @PostMapping("/run-audit")
+    public ResponseEntity<Map<String, Object>> runAuditNow() {
+        auditService.auditPendingDecisions();
+        return ResponseEntity.ok(auditService.getAuditSummary());
+    }
 
     @GetMapping("/config")
     public ResponseEntity<com.vntrade.backend.dto.BotConfigDto> getBotConfig() {
@@ -36,17 +48,19 @@ public class BotController {
 
     @GetMapping("/status")
     public ResponseEntity<Map<String, Object>> getBotStatus() {
-        return ResponseEntity.ok(Map.of(
-            "running", botService.isRunning(),
-            "mode", botService.getMode(),
-            "capital", botService.getAccountCapital(),
-            "todayRealizedPnl", botService.getTodayRealizedPnl(),
-            "todayTradesCount", botService.getTodayTradesCount(),
-            "dailyTarget", botService.getDailyProfitTarget(),
-            "circuitBreakerLimit", botService.getDailyMaxLossLimit(),
-            "recentLogs", botService.getBotLogs(),
-            "breakoutQueue", botService.getBreakoutWatchlist()
-        ));
+        Map<String, Object> status = new java.util.HashMap<>();
+        status.put("running", botService.isRunning());
+        status.put("mode", botService.getMode());
+        status.put("capital", botService.getAccountCapital());
+        status.put("todayRealizedPnl", botService.getTodayRealizedPnl());
+        status.put("todayTradesCount", botService.getTodayTradesCount());
+        status.put("dailyTarget", botService.getDailyProfitTarget());
+        status.put("circuitBreakerLimit", botService.getDailyMaxLossLimit());
+        status.put("recentLogs", botService.getBotLogs());
+        status.put("breakoutQueue", botService.getBreakoutWatchlist());
+        status.put("marketDataStatus", botService.getMarketDataStatus());
+        status.put("isDataFeedHealthy", botService.isDataFeedHealthy());
+        return ResponseEntity.ok(status);
     }
 
     @GetMapping("/breakout-queue")

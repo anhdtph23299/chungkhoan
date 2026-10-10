@@ -79,6 +79,8 @@ public class AutoTradingBotServiceTest {
     private LiquidityAdjustedReturnService liquidityAdjustedReturnService;
     @Mock
     private RelativeRotationGraphService relativeRotationGraphService;
+    @Mock
+    private BotDecisionAuditService botDecisionAuditService;
 
     @InjectMocks
     private AutoTradingBotService botService;
@@ -143,12 +145,16 @@ public class AutoTradingBotServiceTest {
                 .build()
         );
 
+        when(stockPriceService.isMarketDataConnected()).thenReturn(true);
+
         when(stockPriceService.getQuote(anyString())).thenReturn(
             StockQuote.builder()
                 .symbol("FPT")
                 .price(BigDecimal.valueOf(140000))
                 .volume(3000000L)
                 .changePercent(BigDecimal.valueOf(1.5))
+                .dataSource("REAL")
+                .source("VNDIRECT")
                 .build()
         );
 
@@ -201,6 +207,18 @@ public class AutoTradingBotServiceTest {
         assertTrue(trade.getPnl().compareTo(BigDecimal.ZERO) > 0, "Lợi nhuận chốt lời mô phỏng phải dương");
         assertTrue(botService.getTodayRealizedPnl().compareTo(BigDecimal.ZERO) > 0);
         assertEquals(1, botService.getTodayTradesCount());
+    }
+
+    @Test
+    void testExecuteBotCycle_StaleMarketDataBlocksBuys() {
+        // When market data feed is disconnected or stale
+        when(stockPriceService.isMarketDataConnected()).thenReturn(false);
+
+        botService.executeBotCycle();
+
+        // Verify no trades are opened and bot logs STALE alert
+        verify(tradeService, never()).createTrade(any());
+        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("MẤT KẾT NỐI DỮ LIỆU THẬT")));
     }
 
     @Test

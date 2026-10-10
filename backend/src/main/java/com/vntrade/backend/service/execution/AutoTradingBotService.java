@@ -57,6 +57,7 @@ public class AutoTradingBotService {
     private final AdaptivePositionSizingService adaptivePositionSizingService;
     private final LiquidityAdjustedReturnService liquidityAdjustedReturnService;
     private final RelativeRotationGraphService relativeRotationGraphService;
+    private final BotDecisionAuditService botDecisionAuditService;
 
     // Bot Configuration & State
     private boolean isRunning = true;
@@ -188,12 +189,22 @@ public class AutoTradingBotService {
     public void executeBotCycle() {
         if (!isRunning) return;
 
+        // 0. KIỂM SOÁT NGUỒN DỮ LIỆU THẬT (DATA FEED INTEGRITY: REAL vs STALE)
+        // Khi mất dữ liệu thật hoặc toàn bộ API sàn không phản hồi, dừng mở vị thế mới ngay lập tức
+        if (!stockPriceService.isMarketDataConnected()) {
+            addLog("🚨 [MẤT KẾT NỐI DỮ LIỆU THẬT - STALE] Toàn bộ nguồn cấp giá sàn (VNDirect/TCBS/SSI) mất phản hồi. DỪNG 100% LỆNH MỞ VỊ THẾ ĐỂ BẢO VỆ TÀI KHOẢN!");
+            return;
+        }
+
         // 1. Quản trị và chốt lời / cắt lỗ tự động cho các vị thế đang mở
         manageOpenPositions();
 
         // 2. Kiểm tra Cầu chì phòng hộ sụp đổ thị trường (DEFCON-1 Circuit Breaker)
         MarketCrashProtectionDto crashStatus = crashProtectionService.evaluateMarketCircuitBreaker();
         if (!crashStatus.isAllowNewPurchases()) {
+            if (botDecisionAuditService != null) {
+                botDecisionAuditService.recordDecision("VNINDEX", "REJECTED_FILTER", BigDecimal.ZERO, "DEFCON_CRASH", crashStatus.getCircuitBreakerMessage(), 0);
+            }
             addLog("🚨 [DEFCON-1 PHÒNG HỘ THỊ TRƯỜNG] " + crashStatus.getCircuitBreakerMessage() + ". Tự động phong tỏa toàn bộ lệnh mua mới để bảo vệ vốn tuyệt đối!");
             return;
         }
@@ -253,12 +264,23 @@ public class AutoTradingBotService {
         List<StockScanResult> scans = strategyService.scanAllStocks();
         for (StockScanResult scan : scans) {
             if (scan.getConfidenceScore() >= 75 && (scan.getAction().contains("BUY"))) {
+                // Kiểm tra báo giá sàn thật (Data integrity: Bỏ qua nếu STALE hoặc mất kết nối)
+                StockQuote liveQuote = stockPriceService.getQuote(scan.getSymbol());
+                if (liveQuote == null || liveQuote.isStale() || liveQuote.getPrice() == null || liveQuote.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                    addLog(String.format("🚨 [DỮ LIỆU STALE] Bỏ qua %s: Không nhận được báo giá REAL từ sàn (trạng thái: %s). Khóa lệnh mua an toàn!",
+                        scan.getSymbol(), liveQuote != null ? liveQuote.getDataSource() : "NULL"));
+                    continue;
+                }
+
                 boolean alreadyHolding = openTrades.stream().anyMatch(t -> t.getSymbol().equalsIgnoreCase(scan.getSymbol()));
                 if (alreadyHolding) continue;
 
                 // Lọc tiêu chuẩn CANSLIM đẳng cấp định chế (Institutional Grade)
                 CanslimRatingDto canslim = canslimRatingService.rateStock(scan.getSymbol());
                 if (!canslim.isInstitutionalGrade()) {
+                    if (botDecisionAuditService != null) {
+                        botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "CANSLIM", "Grade " + canslim.getCanslimGrade() + " (" + canslim.getCanslimScore() + "đ)", scan.getConfidenceScore());
+                    }
                     addLog("🛡️ [CANSLIM FILTER] Bỏ qua " + scan.getSymbol() + " (Grade " + canslim.getCanslimGrade() + " - " + canslim.getCanslimScore() + "đ): Không đạt chuẩn chất lượng quỹ.");
                     continue;
                 }
@@ -266,6 +288,9 @@ public class AutoTradingBotService {
                 // Kiểm tra đồng thuận đa khung thời gian W1-D1-H1
                 MultiTimeframeConfluenceDto mtf = confluenceService.analyzeMultiTimeframe(scan.getSymbol());
                 if (mtf.getConfluenceScore() < 65) {
+                    if (botDecisionAuditService != null) {
+                        botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "CONFLUENCE_MTF", mtf.getRecommendationVerdict(), scan.getConfidenceScore());
+                    }
                     addLog("⏳ [ĐỒNG THUẬN KHUNG GIỜ] Bỏ qua " + scan.getSymbol() + " (Score " + mtf.getConfluenceScore() + "/100): " + mtf.getRecommendationVerdict());
                     continue;
                 }
@@ -275,6 +300,9 @@ public class AutoTradingBotService {
                     RrgItemDto rrg = relativeRotationGraphService.calculateSingleStockRrg(scan.getSymbol());
                     if (rrg != null) {
                         if ("LAGGING".equals(rrg.getQuadrant()) && "SOUTHWEST".equals(rrg.getHeadingDirection())) {
+                            if (botDecisionAuditService != null) {
+                                botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "RRG_LAGGING", "Nằm ở góc Lagging hướng Tây Nam", scan.getConfidenceScore());
+                            }
                             addLog(String.format("🛡️ [BẪY TỤT HẬU RRG] Bỏ qua %s: Nằm ở góc LAGGING hướng Tây Nam (RS-Ratio=%.2f, RS-Momentum=%.2f, Góc=%.1f°). Sức mạnh tương đối suy kiệt so với VN-Index.",
                                 scan.getSymbol(),
                                 rrg.getCurrentPoint().getRsRatio().doubleValue(),
@@ -374,6 +402,9 @@ public class AutoTradingBotService {
                     try {
                         SpoofingDetectorDto spoofing = spoofingDetectorService.detectSpoofing(scan.getSymbol());
                         if (spoofing != null && !spoofing.isSafeToBuy()) {
+                            if (botDecisionAuditService != null) {
+                                botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "SPOOFING", spoofing.getLayeringPattern(), scan.getConfidenceScore());
+                            }
                             addLog("🛡️ [BẪY KÊ MUA ẢO] Bỏ qua " + scan.getSymbol() + ": Phát hiện " + spoofing.getLayeringPattern() + " (Điểm thao túng " + spoofing.getSpoofingRiskScore() + "/100). Nguy cơ xả hàng Bull Trap.");
                             continue;
                         }
@@ -385,6 +416,9 @@ public class AutoTradingBotService {
                     try {
                         KalmanFilterTrendDto kalman = kalmanFilterTrendService.analyzeKalmanTrend(scan.getSymbol());
                         if (kalman != null && "BEARISH_DOWNWARD".equals(kalman.getTrendRegime())) {
+                            if (botDecisionAuditService != null) {
+                                botDecisionAuditService.recordDecision(scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(), "KALMAN_VELOCITY", "Vận tốc xu hướng đang rơi tự do (" + kalman.getPriceVelocity() + " đ/phiên)", scan.getConfidenceScore());
+                            }
                             addLog("🛡️ [BỘ LỌC KALMAN KHỬ TRỄ] Bỏ qua " + scan.getSymbol() + ": Vận tốc xu hướng đang rơi tự do (" + kalman.getPriceVelocity() + " đ/phiên). Không bắt dao rơi.");
                             continue;
                         }
@@ -486,6 +520,9 @@ public class AutoTradingBotService {
                         .build();
 
                     Trade created = tradeService.createTrade(tradeReq);
+                    if (botDecisionAuditService != null && created != null) {
+                        botDecisionAuditService.recordDecision(created.getSymbol(), "BUY_EXECUTED", created.getPrice(), "NONE", "Vượt qua tất cả tầng lọc định lượng", scan.getConfidenceScore());
+                    }
                     breakoutWatchlist.removeIf(item -> created.getSymbol().equalsIgnoreCase((String) item.get("symbol")));
                     todayTradesCount++;
                     addLog(String.format("⚡ ĐÃ MỞ VỊ THẾ: Mua %d cp %s giá %s đ | SL: %s | TP: %s (R:R = 1:%s)",
@@ -788,5 +825,13 @@ public class AutoTradingBotService {
             }
         }
         return "T+" + businessDaysElapsed + " (Đã thanh toán đầy đủ, sẵn sàng giao dịch)";
+    }
+
+    public String getMarketDataStatus() {
+        return stockPriceService.isMarketDataConnected() ? "REAL" : "STALE";
+    }
+
+    public boolean isDataFeedHealthy() {
+        return stockPriceService.isMarketDataConnected();
     }
 }

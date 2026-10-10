@@ -119,6 +119,8 @@ export interface BotStatus {
   circuitBreakerLimit: number;
   recentLogs: string[];
   breakoutQueue?: BreakoutItem[];
+  marketDataStatus?: 'REAL' | 'STALE';
+  isDataFeedHealthy?: boolean;
 }
 
 export interface BotConfig {

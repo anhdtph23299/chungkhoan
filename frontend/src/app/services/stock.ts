@@ -13,6 +13,7 @@ export interface StockQuote {
   volume: number;
   exchange: string;
   source: string;
+  dataSource?: 'REAL' | 'STALE';
   timestamp: string;
 }
 

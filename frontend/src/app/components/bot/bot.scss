@@ -45,6 +45,96 @@
   }
 }
 
+/* Stale Data Alert Banner */
+.stale-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.1rem 1.5rem;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.22), rgba(185, 28, 28, 0.12));
+  border: 1.5px solid rgba(239, 68, 68, 0.7);
+  border-radius: 14px;
+  box-shadow: 0 0 25px rgba(239, 68, 68, 0.3);
+  animation: pulseAlert 2.5s infinite ease-in-out;
+
+  .stale-alert-icon {
+    font-size: 2rem;
+  }
+
+  .stale-alert-text {
+    flex: 1;
+    strong {
+      display: block;
+      color: #ef4444;
+      font-size: 1.05rem;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.25rem;
+    }
+    p {
+      margin: 0;
+      color: #fca5a5;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      b {
+        color: #ffffff;
+      }
+    }
+  }
+
+  .stale-badge-pill {
+    padding: 0.4rem 0.9rem;
+    background: #ef4444;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: 999px;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+}
+
+@keyframes pulseAlert {
+  0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.25); border-color: rgba(239, 68, 68, 0.6); }
+  50% { box-shadow: 0 0 30px rgba(239, 68, 68, 0.55); border-color: rgba(239, 68, 68, 0.95); }
+}
+
+.feed-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.28rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+
+  .dot-indicator {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  &.feed-real {
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.45);
+    color: #10b981;
+    .dot-indicator {
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+  }
+
+  &.feed-stale {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.65);
+    color: #ef4444;
+    .dot-indicator {
+      background: #ef4444;
+      box-shadow: 0 0 8px #ef4444;
+    }
+  }
+}
+
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-12px); }
   to { opacity: 1; transform: translateY(0); }

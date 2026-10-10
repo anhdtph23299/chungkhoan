@@ -22,5 +22,14 @@ public class StockQuote {
     private Long volume;
     private String exchange;
     private String source;              // Nguồn dữ liệu
+    private String dataSource;          // "REAL" (từ sàn thật VNDirect/TCBS/SSI) hoặc "STALE" (mất kết nối / cache cũ)
     private String timestamp;
+
+    public boolean isReal() {
+        return "REAL".equalsIgnoreCase(this.dataSource);
+    }
+
+    public boolean isStale() {
+        return !isReal();
+    }
 }

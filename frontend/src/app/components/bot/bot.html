@@ -7,6 +7,16 @@
     <span class="toast-text">{{ actionMessage }}</span>
   </div>
 
+  <!-- Cảnh báo Mất kết nối Nguồn Dữ Liệu Thật (STALE DATA ALERT) -->
+  <div *ngIf="status.marketDataStatus === 'STALE'" class="stale-alert-banner">
+    <div class="stale-alert-icon">🚨</div>
+    <div class="stale-alert-text">
+      <strong>CẢNH BÁO: MẤT KẾT NỐI NGUỒN DỮ LIỆU THẬT (STALE / FEED DISCONNECTED)!</strong>
+      <p>Toàn bộ API sàn (VNDirect, TCBS, SSI) không phản hồi. Robot đã <b>TỰ ĐỘNG PHONG TỎA 100% LỆNH MUA MỚI</b> để bảo vệ vốn tuyệt đối.</p>
+    </div>
+    <span class="stale-badge-pill">PROTECTION MODE</span>
+  </div>
+
   <!-- Hero Header Panel -->
   <div class="bot-hero glass-card">
     <div class="hero-left">
@@ -14,6 +24,9 @@
         <span class="ai-chip">QUANT AI CORE</span>
         <span class="mode-pill" [class.paper]="status.mode === 'LIVE_PAPER_MONEY'">
           {{ status.mode === 'LIVE_PAPER_MONEY' ? '⚡ LIVE PAPER TRADING (GIÁ THẬT HOSE)' : status.mode }}
+        </span>
+        <span class="feed-status-pill" [class.feed-real]="status.marketDataStatus === 'REAL'" [class.feed-stale]="status.marketDataStatus === 'STALE'">
+          <span class="dot-indicator"></span> {{ status.marketDataStatus === 'REAL' ? 'DATA: REAL (SÀN THẬT)' : 'DATA: STALE (MẤT KẾT NỐI)' }}
         </span>
       </div>
       <h1 class="bot-title">Robot Giao Dịch Tự Động Định Chế</h1>

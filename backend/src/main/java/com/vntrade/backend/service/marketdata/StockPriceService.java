@@ -7,20 +7,26 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.client.RestClientException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Service lấy giá cổ phiếu từ API công khai của TCBS (Techcombank Securities)
- * TCBS cung cấp API miễn phí không cần key cho cổ phiếu VN.
+ * Service lấy giá cổ phiếu thời gian thực từ các nguồn API sàn chứng khoán Việt Nam:
+ * 1. VNDirect Finfo API (Primary realtime)
+ * 2. VNDirect Dchart API (OHLCV fallback)
+ * 3. TCBS Public API (Secondary fallback)
+ * 4. SSI Public API (Tertiary fallback)
+ * 
+ * NGUYÊN TẮC AN TOÀN ĐỊNH LƯỢNG (REALITY-FIRST):
+ * - Gắn cờ dataSource = "REAL" cho toàn bộ báo giá lấy thành công từ sàn thật.
+ * - Khi toàn bộ API sàn mất kết nối / rút mạng, gắn cờ dataSource = "STALE" hoặc ném trạng thái mất kết nối.
+ * - TUYỆT ĐỐI KHÔNG dùng giá tham chiếu giả lập / fake ticks để che giấu lỗi!
  */
 @Service
 @Slf4j
@@ -42,22 +48,33 @@ public class StockPriceService {
         this.objectMapper = new ObjectMapper();
     }
 
+    // Constructor dùng cho Mock / Test
+    public StockPriceService(RestTemplate restTemplate, ObjectMapper objectMapper) {
+        this.restTemplate = restTemplate;
+        this.objectMapper = objectMapper;
+    }
+
     /**
-     * Lấy giá cổ phiếu từ TCBS API (miễn phí, không cần key)
+     * Lấy giá cổ phiếu thời gian thực.
+     * Luôn gắn cờ dataSource ("REAL" hoặc "STALE").
      */
     public StockQuote getQuote(String symbol) {
         String upperSymbol = symbol.toUpperCase().trim();
 
-        // Kiểm tra cache
+        // 0. Kiểm tra cache hợp lệ
         if (isCacheValid(upperSymbol)) {
-            log.debug("Returning cached quote for {}", upperSymbol);
-            return cache.get(upperSymbol);
+            StockQuote cached = cache.get(upperSymbol);
+            if (cached != null) {
+                log.debug("Returning cached [{}] quote for {}", cached.getDataSource(), upperSymbol);
+                return cached;
+            }
         }
 
-        // 1. Thử VNDirect Finfo API
+        // 1. Thử VNDirect Finfo API (Nguồn chính thời gian thực)
         StockQuote quote = getQuoteFromVndirect(upperSymbol);
         if (quote != null) {
             cacheQuote(upperSymbol, quote);
+            log.info("📊 [REAL] Báo giá {} từ VNDIRECT: {} đ ({}%)", upperSymbol, quote.getPrice(), quote.getChangePercent());
             return quote;
         }
 
@@ -65,28 +82,29 @@ public class StockPriceService {
         quote = getQuoteFromVndirectDchart(upperSymbol);
         if (quote != null) {
             cacheQuote(upperSymbol, quote);
+            log.info("📊 [REAL] Báo giá {} từ VNDIRECT_DCHART: {} đ ({}%)", upperSymbol, quote.getPrice(), quote.getChangePercent());
             return quote;
         }
 
-        // 3. Thử TCBS
-        try {
-            String url = "https://apipubaws.tcbs.com.vn/stock-insight/v1/stock/search?query=" + upperSymbol + "&size=1";
-            String response = restTemplate.getForObject(url, String.class);
-            if (response != null) {
-                JsonNode root = objectMapper.readTree(response);
-                JsonNode data = root.path("data");
-                if (data.isArray() && data.size() > 0) {
-                    quote = buildQuoteFromTcbs(upperSymbol, data.get(0));
-                    cacheQuote(upperSymbol, quote);
-                    return quote;
-                }
-            }
-        } catch (Exception e) {
-            log.debug("TCBS API unavailable for {}: {}", upperSymbol, e.getMessage());
+        // 3. Thử TCBS Public API (Nguồn dự phòng thứ 2)
+        quote = getQuoteFromTcbs(upperSymbol);
+        if (quote != null) {
+            cacheQuote(upperSymbol, quote);
+            log.info("📊 [REAL] Báo giá {} từ TCBS: {} đ ({}%)", upperSymbol, quote.getPrice(), quote.getChangePercent());
+            return quote;
         }
 
-        // 4. Fallback
-        return getQuoteFromSsi(upperSymbol);
+        // 4. Thử SSI Public API (Nguồn dự phòng thứ 3)
+        quote = getQuoteFromSsi(upperSymbol);
+        if (quote != null) {
+            cacheQuote(upperSymbol, quote);
+            log.info("📊 [REAL] Báo giá {} từ SSI: {} đ ({}%)", upperSymbol, quote.getPrice(), quote.getChangePercent());
+            return quote;
+        }
+
+        // 5. TOÀN BỘ NGUỒN CẤP DỮ LIỆU SÀN THẤT BẠI:
+        // TUYỆT ĐỐI KHÔNG DÙNG GIÁ GIẢ! Trả về STALE để bot dừng mở lệnh và cảnh báo FE.
+        return getStaleOrDisconnectedQuote(upperSymbol);
     }
 
     private StockQuote getQuoteFromVndirect(String symbol) {
@@ -113,6 +131,7 @@ public class StockPriceService {
                     .volume(s.path("nmVolume").asLong(0))
                     .exchange(s.path("exchange").asText("HOSE"))
                     .source("VNDIRECT")
+                    .dataSource("REAL")
                     .timestamp(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
                     .build();
             }
@@ -169,6 +188,7 @@ public class StockPriceService {
                             .volume(vol)
                             .exchange("HOSE")
                             .source("VNDIRECT_DCHART")
+                            .dataSource("REAL")
                             .timestamp(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
                             .build();
                     }
@@ -180,97 +200,136 @@ public class StockPriceService {
         return null;
     }
 
+    private StockQuote getQuoteFromTcbs(String symbol) {
+        try {
+            String url = "https://apipubaws.tcbs.com.vn/stock-insight/v1/stock/search?query=" + symbol + "&size=1";
+            String response = restTemplate.getForObject(url, String.class);
+            if (response != null) {
+                JsonNode root = objectMapper.readTree(response);
+                JsonNode data = root.path("data");
+                if (data.isArray() && data.size() > 0) {
+                    JsonNode stock = data.get(0);
+                    BigDecimal price = toBigDecimal(stock.path("p").asText("0"));
+                    if (price.compareTo(BigDecimal.ZERO) > 0) {
+                        return StockQuote.builder()
+                            .symbol(symbol)
+                            .price(price)
+                            .change(toBigDecimal(stock.path("delta").asText("0")))
+                            .changePercent(toBigDecimal(stock.path("percentChange").asText("0")))
+                            .open(toBigDecimal(stock.path("o").asText("0")))
+                            .high(toBigDecimal(stock.path("h").asText("0")))
+                            .low(toBigDecimal(stock.path("l").asText("0")))
+                            .volume(stock.path("vol").asLong(0))
+                            .exchange(stock.path("e").asText("HOSE"))
+                            .source("TCBS")
+                            .dataSource("REAL")
+                            .timestamp(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+                            .build();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("TCBS API unavailable for {}: {}", symbol, e.getMessage());
+        }
+        return null;
+    }
+
     private StockQuote getQuoteFromSsi(String symbol) {
         try {
             String url = "https://fc-data.ssi.com.vn/api/v2/Market/StockRealtimeBySymbol?symbols=" + symbol;
             String response = restTemplate.getForObject(url, String.class);
-
             if (response != null) {
                 JsonNode root = objectMapper.readTree(response);
                 JsonNode data = root.path("data");
-
                 if (data.isArray() && data.size() > 0) {
                     JsonNode stock = data.get(0);
-                    StockQuote quote = StockQuote.builder()
-                        .symbol(symbol)
-                        .price(toBigDecimal(stock.path("lastPrice").asText("0")))
-                        .change(toBigDecimal(stock.path("priceChange").asText("0")))
-                        .changePercent(toBigDecimal(stock.path("priceChangePercent").asText("0")))
-                        .open(toBigDecimal(stock.path("open").asText("0")))
-                        .high(toBigDecimal(stock.path("highest").asText("0")))
-                        .low(toBigDecimal(stock.path("lowest").asText("0")))
-                        .volume(stock.path("totalMatchVolume").asLong(0))
-                        .exchange(stock.path("exchange").asText("HOSE"))
-                        .source("SSI")
-                        .timestamp(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
-                        .build();
-                    cacheQuote(symbol, quote);
-                    return quote;
+                    BigDecimal price = toBigDecimal(stock.path("lastPrice").asText("0"));
+                    if (price.compareTo(BigDecimal.ZERO) > 0) {
+                        return StockQuote.builder()
+                            .symbol(symbol)
+                            .price(price)
+                            .change(toBigDecimal(stock.path("priceChange").asText("0")))
+                            .changePercent(toBigDecimal(stock.path("priceChangePercent").asText("0")))
+                            .open(toBigDecimal(stock.path("open").asText("0")))
+                            .high(toBigDecimal(stock.path("highest").asText("0")))
+                            .low(toBigDecimal(stock.path("lowest").asText("0")))
+                            .volume(stock.path("totalMatchVolume").asLong(0))
+                            .exchange(stock.path("exchange").asText("HOSE"))
+                            .source("SSI")
+                            .dataSource("REAL")
+                            .timestamp(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
+                            .build();
+                    }
                 }
             }
         } catch (Exception e) {
             log.debug("SSI API failed for {}: {}", symbol, e.getMessage());
         }
+        return null;
+    }
 
-        // Fallback thực tế cho các mã chứng khoán phổ biến của VN khi ngoài giờ GD hoặc mất kết nối
-        BigDecimal fallbackPrice = getFallbackPrice(symbol);
-        BigDecimal fallbackChange = fallbackPrice.multiply(BigDecimal.valueOf(0.015)).setScale(0, java.math.RoundingMode.HALF_UP);
+    /**
+     * Khi toàn bộ kết nối sàn mất, trả về dữ liệu STALE.
+     * TUYỆT ĐỐI KHÔNG dùng giá tham chiếu giả lập / fake ticks!
+     */
+    private StockQuote getStaleOrDisconnectedQuote(String symbol) {
+        StockQuote cached = cache.get(symbol);
+        if (cached != null && cached.getPrice() != null) {
+            log.warn("🚨 [DỮ LIỆU STALE] Mất kết nối sàn cho mã {}. Trả về giá cũ từ cache nhưng gắn cờ STALE.", symbol);
+            return StockQuote.builder()
+                .symbol(symbol)
+                .price(cached.getPrice())
+                .change(cached.getChange())
+                .changePercent(cached.getChangePercent())
+                .open(cached.getOpen())
+                .high(cached.getHigh())
+                .low(cached.getLow())
+                .volume(cached.getVolume())
+                .exchange(cached.getExchange())
+                .source(cached.getSource() + "_STALE")
+                .dataSource("STALE")
+                .timestamp(cached.getTimestamp())
+                .build();
+        }
+
+        log.error("🚨 [MẤT KẾT NỐI SÀN] Không thể lấy giá cho mã {} từ bất kỳ API thật nào (VNDirect, TCBS, SSI). Không có cache cũ -> Báo STALE không có giá!", symbol);
         return StockQuote.builder()
             .symbol(symbol)
-            .price(fallbackPrice)
-            .change(fallbackChange)
-            .changePercent(BigDecimal.valueOf(1.50))
-            .open(fallbackPrice.subtract(fallbackChange))
-            .high(fallbackPrice.add(fallbackChange))
-            .low(fallbackPrice.subtract(fallbackChange))
-            .volume(5_200_000L)
+            .price(null)
+            .change(BigDecimal.ZERO)
+            .changePercent(BigDecimal.ZERO)
+            .open(null)
+            .high(null)
+            .low(null)
+            .volume(0L)
             .exchange("HOSE")
-            .source("VNMarket-Reference")
+            .source("DISCONNECTED")
+            .dataSource("STALE")
             .timestamp(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
             .build();
     }
 
-    private BigDecimal getFallbackPrice(String symbol) {
-        return switch (symbol.toUpperCase()) {
-            case "FPT" -> BigDecimal.valueOf(141000);
-            case "HPG" -> BigDecimal.valueOf(29800);
-            case "SSI" -> BigDecimal.valueOf(35000);
-            case "MWG" -> BigDecimal.valueOf(68500);
-            case "TCB" -> BigDecimal.valueOf(24600);
-            case "VHM" -> BigDecimal.valueOf(42300);
-            case "VCB" -> BigDecimal.valueOf(92500);
-            case "MBB" -> BigDecimal.valueOf(24500);
-            case "DGC" -> BigDecimal.valueOf(118000);
-            case "STB" -> BigDecimal.valueOf(31500);
-            case "VIX" -> BigDecimal.valueOf(14200);
-            case "PVD" -> BigDecimal.valueOf(26800);
-            case "KBC" -> BigDecimal.valueOf(28400);
-            default -> BigDecimal.valueOf(25000);
-        };
-    }
-
-    private StockQuote buildQuoteFromTcbs(String symbol, JsonNode stock) {
-        return StockQuote.builder()
-            .symbol(symbol)
-            .price(toBigDecimal(stock.path("p").asText("0")))
-            .change(toBigDecimal(stock.path("delta").asText("0")))
-            .changePercent(toBigDecimal(stock.path("percentChange").asText("0")))
-            .open(toBigDecimal(stock.path("o").asText("0")))
-            .high(toBigDecimal(stock.path("h").asText("0")))
-            .low(toBigDecimal(stock.path("l").asText("0")))
-            .volume(stock.path("vol").asLong(0))
-            .exchange(stock.path("e").asText("HOSE"))
-            .source("TCBS")
-            .timestamp(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
-            .build();
+    /**
+     * Kiểm tra trạng thái kết nối nguồn dữ liệu thị trường thật
+     */
+    public boolean isMarketDataConnected() {
+        try {
+            StockQuote q = getQuote("VNINDEX");
+            if (q != null && q.isReal() && q.getPrice() != null && q.getPrice().compareTo(BigDecimal.ZERO) > 0) {
+                return true;
+            }
+            StockQuote fpt = getQuote("FPT");
+            return fpt != null && fpt.isReal() && fpt.getPrice() != null && fpt.getPrice().compareTo(BigDecimal.ZERO) > 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private BigDecimal toBigDecimal(String value) {
         try {
             if (value == null || value.isBlank() || value.equals("null")) return BigDecimal.ZERO;
-            // Giá VN thường nhân 1000 trong một số API
             double d = Double.parseDouble(value);
-            if (d > 0 && d < 100) d = d * 1000; // Giá VN tính bằng nghìn đồng
+            if (d > 0 && d < 100) d = d * 1000;
             return BigDecimal.valueOf(d);
         } catch (NumberFormatException e) {
             return BigDecimal.ZERO;
@@ -282,18 +341,27 @@ public class StockPriceService {
         return time != null && (System.currentTimeMillis() - time) < CACHE_TTL_MS;
     }
 
+    /**
+     * Hủy hiệu lực cache thời gian để ép buộc quét mới từ sàn
+     */
+    public void invalidateCache(String symbol) {
+        if (symbol != null) {
+            cacheTime.remove(symbol.toUpperCase().trim());
+        }
+    }
+
     private void cacheQuote(String symbol, StockQuote quote) {
         cache.put(symbol, quote);
         cacheTime.put(symbol, System.currentTimeMillis());
     }
 
     /**
-     * Cập nhật giá thị trường trực tiếp (dùng cho bot mô phỏng và khớp lệnh tự động)
+     * Cập nhật giá thị trường mô phỏng (gắn cờ STALE/SIMULATED để bot không nhầm với sàn thật)
      */
     public StockQuote updateMarketPrice(String symbol, BigDecimal newPrice) {
         String upperSymbol = symbol.toUpperCase().trim();
         StockQuote current = getQuote(upperSymbol);
-        BigDecimal oldPrice = current.getPrice();
+        BigDecimal oldPrice = (current != null && current.getPrice() != null) ? current.getPrice() : newPrice;
         BigDecimal diff = newPrice.subtract(oldPrice);
         BigDecimal pct = oldPrice.compareTo(BigDecimal.ZERO) > 0
             ? diff.divide(oldPrice, 4, java.math.RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
@@ -304,17 +372,18 @@ public class StockPriceService {
             .price(newPrice)
             .change(diff)
             .changePercent(pct)
-            .open(current.getOpen() != null ? current.getOpen() : oldPrice)
-            .high(newPrice.compareTo(current.getHigh() != null ? current.getHigh() : newPrice) > 0 ? newPrice : current.getHigh())
-            .low(newPrice.compareTo(current.getLow() != null ? current.getLow() : newPrice) < 0 ? newPrice : current.getLow())
-            .volume((current.getVolume() != null ? current.getVolume() : 1_000_000L) + 50_000L)
+            .open(current != null && current.getOpen() != null ? current.getOpen() : oldPrice)
+            .high(current != null && current.getHigh() != null && newPrice.compareTo(current.getHigh()) > 0 ? newPrice : (current != null ? current.getHigh() : newPrice))
+            .low(current != null && current.getLow() != null && newPrice.compareTo(current.getLow()) < 0 ? newPrice : (current != null ? current.getLow() : newPrice))
+            .volume((current != null && current.getVolume() != null ? current.getVolume() : 1_000_000L) + 50_000L)
             .exchange("HOSE")
             .source("SIMULATED_TICK")
+            .dataSource("STALE")
             .timestamp(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME))
             .build();
 
         cacheQuote(upperSymbol, updated);
-        log.info("📊 Giá thị trường {} cập nhật: {} đ ({}%)", upperSymbol, newPrice, pct);
+        log.info("📊 [STALE/SIMULATED] Giá thị trường {} cập nhật mô phỏng: {} đ ({}%)", upperSymbol, newPrice, pct);
         return updated;
     }
 }
