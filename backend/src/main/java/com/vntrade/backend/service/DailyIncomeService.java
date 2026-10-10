@@ -93,15 +93,15 @@ public class DailyIncomeService {
              (nowTime.isAfter(java.time.LocalTime.of(13, 0)) && nowTime.isBefore(java.time.LocalTime.of(14, 45))));
 
         String message;
-        if (isWeekend) {
-            String dayLabel = (dow == java.time.DayOfWeek.SATURDAY) ? "Thứ 7" : "Chủ nhật";
-            message = String.format("☕ CUỐI TUẦN (%s): Thị trường đóng cửa. Sáng Thứ 2 (09:00) sàn mở cửa trở lại!", dayLabel);
-        } else if (realizedProfit.compareTo(DEFAULT_DAILY_TARGET) >= 0) {
+        if (realizedProfit.compareTo(DEFAULT_DAILY_TARGET) >= 0) {
             message = String.format("🎉 ĐẠT CHỈ TIÊU NGÀY! Lãi ròng thực nhận: +%s đ (%s%% chỉ tiêu). Đã trích 30%% (+%s đ) tiền mặt có thể rút chi tiêu!",
                 realizedProfit.toPlainString(), achievementPct.setScale(1, RoundingMode.HALF_UP), withdrawable.toPlainString());
         } else if (realizedProfit.compareTo(BigDecimal.ZERO) > 0) {
             message = String.format("🌾 ĐÃ GẶT HÁI TIỀN MẶT: +%s đ lãi thực tế. Đạt %s%% mục tiêu ngày. Tiếp tục gồng các vị thế sinh lời.",
                 realizedProfit.toPlainString(), achievementPct.setScale(1, RoundingMode.HALF_UP));
+        } else if (isWeekend) {
+            String dayLabel = (dow == java.time.DayOfWeek.SATURDAY) ? "Thứ 7" : "Chủ nhật";
+            message = String.format("☕ CUỐI TUẦN (%s): Thị trường đóng cửa. Sáng Thứ 2 (09:00) sàn mở cửa trở lại!", dayLabel);
         } else if (isTradingHours) {
             message = "🎯 ĐANG TRONG PHIÊN GIAO DỊCH: Radar đang quét tìm điểm mua chuẩn định chế và giám sát chốt lời/cắt lỗ.";
         } else if (nowTime.isBefore(java.time.LocalTime.of(9, 0))) {

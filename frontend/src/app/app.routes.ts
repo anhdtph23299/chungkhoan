@@ -7,6 +7,7 @@ import { AnalysisComponent } from './components/analysis/analysis';
 import { RiskComponent } from './components/risk/risk';
 import { ScheduleComponent } from './components/schedule/schedule';
 import { BotComponent } from './components/bot/bot';
+import { FuturesComponent } from './components/futures/futures';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
@@ -18,5 +19,6 @@ export const routes: Routes = [
   { path: 'risk', component: RiskComponent },
   { path: 'schedule', component: ScheduleComponent },
   { path: 'bot', component: BotComponent },
+  { path: 'futures', component: FuturesComponent },
   { path: '**', redirectTo: 'dashboard' }
 ];

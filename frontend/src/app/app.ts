@@ -22,6 +22,7 @@ export class App {
     { path: 'risk', icon: '🛡️', label: 'Quản lý RR' },
     { path: 'schedule', icon: '📅', label: 'Lịch GD' },
     { path: 'bot', icon: '🤖', label: 'Bot Trader' },
+    { path: 'futures', icon: '⚡', label: 'Phái Sinh T+0' },
   ];
 
   get currentHour(): number {

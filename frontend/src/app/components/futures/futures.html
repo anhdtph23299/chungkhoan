@@ -1,0 +1,424 @@
+<div class="futures-container">
+  <!-- Top Ticker & Status Bar -->
+  <header class="futures-header">
+    <div class="ticker-group">
+      <div class="symbol-badge">
+        <span class="icon">⚡</span>
+        <div class="symbol-info">
+          <span class="symbol-name">VN30F1M</span>
+          <span class="symbol-sub">HĐ Tương Lai Tháng Hiện Tại</span>
+        </div>
+      </div>
+
+      <div class="price-box" *ngIf="quote">
+        <div class="live-price">{{ quote.currentPrice | number:'1.1-1' }}</div>
+        <div class="price-change" [class.up]="quote.change > 0" [class.down]="quote.change < 0">
+          <span>{{ quote.change > 0 ? '+' : '' }}{{ quote.change | number:'1.1-1' }} pts</span>
+          <span>({{ quote.pctChange > 0 ? '+' : '' }}{{ quote.pctChange | number:'1.2-2' }}%)</span>
+        </div>
+      </div>
+
+      <div class="basis-box" *ngIf="quote">
+        <div class="box-label">Độ Lệch Basis (F - VN30)</div>
+        <div class="basis-val" [class.positive]="quote.basis > 0" [class.negative]="quote.basis < 0">
+          {{ quote.basis > 0 ? '+' : '' }}{{ quote.basis | number:'1.1-1' }} pts
+        </div>
+        <span class="basis-status-tag">{{ quote.basisStatus }}</span>
+      </div>
+
+      <div class="index-ref" *ngIf="quote">
+        <span class="label">VN30 Cơ Sở:</span>
+        <span class="val">{{ quote.vn30IndexPrice | number:'1.2-2' }}</span>
+      </div>
+    </div>
+
+    <!-- Today Financial Summary & Bot Toggle -->
+    <div class="header-actions">
+      <div class="income-badge" *ngIf="botConfig">
+        <span class="label">Lãi/Lỗ Hôm Nay:</span>
+        <span class="value" [class.profit]="botConfig.todayRealizedPnlVnd > 0" [class.loss]="botConfig.todayRealizedPnlVnd < 0">
+          {{ botConfig.todayRealizedPnlVnd > 0 ? '+' : '' }}{{ botConfig.todayRealizedPnlVnd | number:'1.0-0' }} đ
+          <small>({{ botConfig.todayPnlPoints > 0 ? '+' : '' }}{{ botConfig.todayPnlPoints | number:'1.1-1' }} pts)</small>
+        </span>
+      </div>
+
+      <div class="bot-control" *ngIf="botConfig">
+        <button class="bot-btn" [class.running]="botConfig.autoTrading" (click)="toggleBot(!botConfig.autoTrading)">
+          <span class="pulse-dot"></span>
+          <span>{{ botConfig.autoTrading ? 'BOT PHÁI SINH: ĐANG BẬT' : 'BOT PHÁI SINH: ĐÃ TẮT' }}</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Notification Banner -->
+  <div class="toast-banner" *ngIf="actionMessage" [ngClass]="actionType">
+    <span>{{ actionMessage }}</span>
+    <button class="close-toast" (click)="actionMessage = ''">×</button>
+  </div>
+
+  <!-- Navigation View Tabs -->
+  <nav class="futures-tabs">
+    <button [class.active]="activeTab === 'TERMINAL'" (click)="activeTab = 'TERMINAL'">
+      ⚡ Terminal Trực Canh T+0
+    </button>
+    <button [class.active]="activeTab === 'BACKTEST'" (click)="activeTab = 'BACKTEST'">
+      🔬 Backtest Kiểm Thử Định Lượng (5m)
+    </button>
+    <button [class.active]="activeTab === 'HISTORY'" (click)="activeTab = 'HISTORY'">
+      📜 Lịch Sử Giao Dịch
+      <span class="badge" *ngIf="positionHistory.length > 0">{{ positionHistory.length }}</span>
+    </button>
+  </nav>
+
+  <!-- TAB 1: TERMINAL TRỰC CANH -->
+  <div class="tab-content terminal-grid" *ngIf="activeTab === 'TERMINAL'">
+    <!-- Left Column: Signal & Fast Trade Desk -->
+    <div class="left-col">
+      <!-- AI Quant Signal Card -->
+      <section class="card signal-card" [class.long-glow]="signal?.action === 'LONG'" [class.short-glow]="signal?.action === 'SHORT'">
+        <div class="card-header">
+          <div class="title-with-badge">
+            <h3>🤖 Tín Hiệu Định Lượng AI Real-time</h3>
+            <span class="strategy-badge" *ngIf="signal">{{ signal.strategyName }}</span>
+          </div>
+          <span class="conf-badge" *ngIf="signal">Độ Tin Cậy: {{ signal.confidenceScore }}%</span>
+        </div>
+
+        <div class="signal-body" *ngIf="signal">
+          <div class="action-banner" [ngClass]="signal.action.toLowerCase()">
+            <div class="action-icon">
+              {{ signal.action === 'LONG' ? '🚀' : (signal.action === 'SHORT' ? '🔻' : '⏸️') }}
+            </div>
+            <div class="action-text">
+              <span class="main-action">{{ signal.action === 'LONG' ? 'MỞ VỊ THẾ LONG (MUA)' : (signal.action === 'SHORT' ? 'MỞ VỊ THẾ SHORT (BÁN KHỐNG)' : 'TRỰC CANH CHỜ ĐIỂM VÀO') }}</span>
+              <span class="trend-sub">{{ signal.trendStatus }}</span>
+            </div>
+          </div>
+
+          <div class="signal-levels" *ngIf="signal.action !== 'STANDBY'">
+            <div class="level-box entry">
+              <span class="lbl">Điểm Vào (Entry)</span>
+              <span class="val">{{ signal.entryPrice | number:'1.1-1' }}</span>
+            </div>
+            <div class="level-box sl">
+              <span class="lbl">Cắt Lỗ (Stop Loss)</span>
+              <span class="val">{{ signal.stopLossPrice | number:'1.1-1' }}</span>
+            </div>
+            <div class="level-box tp1">
+              <span class="lbl">Chốt Lời 1 (TP1)</span>
+              <span class="val">{{ signal.takeProfit1 | number:'1.1-1' }}</span>
+            </div>
+            <div class="level-box tp2">
+              <span class="lbl">Chốt Lời 2 (TP2)</span>
+              <span class="val">{{ signal.takeProfit2 | number:'1.1-1' }}</span>
+            </div>
+          </div>
+
+          <p class="signal-reason">💡 {{ signal.recommendationReason }}</p>
+
+          <!-- Technical Gauges Bar -->
+          <div class="gauge-bar">
+            <div class="gauge-item">
+              <span class="g-lbl">RSI(14)</span>
+              <span class="g-val" [class.oversold]="signal.rsi < 35" [class.overbought]="signal.rsi > 65">{{ signal.rsi | number:'1.1-1' }}</span>
+            </div>
+            <div class="gauge-item">
+              <span class="g-lbl">MACD Hist</span>
+              <span class="g-val" [class.positive]="signal.macdHist > 0" [class.negative]="signal.macdHist < 0">{{ signal.macdHist | number:'1.2-2' }}</span>
+            </div>
+            <div class="gauge-item">
+              <span class="g-lbl">VWAP 5m</span>
+              <span class="g-val">{{ signal.vwap | number:'1.1-1' }}</span>
+            </div>
+            <div class="gauge-item">
+              <span class="g-lbl">Basis</span>
+              <span class="g-val" [class.positive]="signal.basis > 0" [class.negative]="signal.basis < 0">{{ signal.basis > 0 ? '+' : '' }}{{ signal.basis | number:'1.1-1' }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Fast Trade Execution Deck -->
+      <section class="card order-desk">
+        <div class="card-header">
+          <h3>⚡ Bàn Khớp Lệnh Nhanh T+0</h3>
+          <span class="sub-text">Khớp lệnh tức thì – Không kẹt chu kỳ T+2.5</span>
+        </div>
+
+        <div class="order-controls">
+          <div class="contract-selector">
+            <span class="label">Khối lượng (HĐ):</span>
+            <div class="btn-group">
+              <button [class.active]="manualContracts === 1" (click)="manualContracts = 1">1 HĐ</button>
+              <button [class.active]="manualContracts === 2" (click)="manualContracts = 2">2 HĐ</button>
+              <button [class.active]="manualContracts === 3" (click)="manualContracts = 3">3 HĐ</button>
+              <button [class.active]="manualContracts === 4" (click)="manualContracts = 4">4 HĐ</button>
+            </div>
+          </div>
+
+          <div class="margin-estimate" *ngIf="quote">
+            <span>Ký quỹ tạm tính (~17.5%):</span>
+            <strong>{{ (quote.currentPrice * 100000 * 0.175 * manualContracts) | number:'1.0-0' }} VNĐ</strong>
+          </div>
+
+          <div class="action-btn-row">
+            <button class="btn-long" (click)="executeQuickOrder('LONG')">
+              <span class="btn-icon">▲</span>
+              <span class="btn-text">MỞ LONG</span>
+              <small>{{ quote?.currentPrice | number:'1.1-1' }}</small>
+            </button>
+            <button class="btn-short" (click)="executeQuickOrder('SHORT')">
+              <span class="btn-icon">▼</span>
+              <span class="btn-text">MỞ SHORT</span>
+              <small>{{ quote?.currentPrice | number:'1.1-1' }}</small>
+            </button>
+          </div>
+
+          <button class="btn-close-all" *ngIf="openPositions.length > 0" (click)="closeAll()">
+            ⏹ TẤT TOÁN TOÀN BỘ VỊ THẾ NGAY LẬP TỨC
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Column: Active Positions & Bot Logs -->
+    <div class="right-col">
+      <!-- Active Open Positions -->
+      <section class="card positions-card">
+        <div class="card-header">
+          <div class="title-with-badge">
+            <h3>📊 Vị Thế Đang Mở (Open Positions)</h3>
+            <span class="pos-count">{{ openPositions.length }} vị thế</span>
+          </div>
+          <span class="margin-badge" *ngIf="openPositions.length > 0">T+0 Sẵn Sàng Chốt Lời</span>
+        </div>
+
+        <div class="pos-empty" *ngIf="openPositions.length === 0">
+          <span class="empty-icon">🛡️</span>
+          <p>Hiện không có vị thế mở nào. Bot đang trực canh săn điểm vào chuẩn xác.</p>
+        </div>
+
+        <div class="positions-list" *ngIf="openPositions.length > 0">
+          <div class="pos-item" *ngFor="let pos of openPositions" [class.long]="pos.side === 'LONG'" [class.short]="pos.side === 'SHORT'">
+            <div class="pos-main">
+              <div class="pos-badge" [class.long]="pos.side === 'LONG'" [class.short]="pos.side === 'SHORT'">
+                {{ pos.side }} {{ pos.contracts }} HĐ
+              </div>
+              <div class="pos-prices">
+                <div class="p-row">
+                  <span class="lbl">Vào:</span>
+                  <span class="val">{{ pos.entryPrice | number:'1.1-1' }}</span>
+                </div>
+                <div class="p-row">
+                  <span class="lbl">Hiện tại:</span>
+                  <span class="val">{{ pos.currentPrice | number:'1.1-1' }}</span>
+                </div>
+              </div>
+
+              <div class="pos-pnl" [class.profit]="pos.pnlPoints > 0" [class.loss]="pos.pnlPoints < 0">
+                <div class="pnl-points">{{ pos.pnlPoints > 0 ? '+' : '' }}{{ pos.pnlPoints | number:'1.1-1' }} pts</div>
+                <div class="pnl-vnd">{{ pos.netPnlVnd > 0 ? '+' : '' }}{{ pos.netPnlVnd | number:'1.0-0' }} đ</div>
+              </div>
+
+              <div class="pos-actions">
+                <button class="btn-close-pos" (click)="closePosition(pos)">Đóng Lệnh</button>
+              </div>
+            </div>
+
+            <div class="pos-sub">
+              <span>SL: {{ pos.stopLossPrice | number:'1.1-1' }}</span>
+              <span>TP: {{ pos.takeProfitPrice | number:'1.1-1' }}</span>
+              <span *ngIf="pos.trailingStopPrice">Trailing: {{ pos.trailingStopPrice | number:'1.1-1' }}</span>
+              <span>Ký quỹ: {{ pos.marginUsed | number:'1.0-0' }} đ</span>
+              <span>Thời gian: {{ pos.openTime | date:'HH:mm:ss' }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bot Activity Logs -->
+      <section class="card logs-card">
+        <div class="card-header">
+          <h3>📡 Nhật Ký Bot Trực Canh Thời Gian Thực</h3>
+          <span class="refresh-pill" (click)="refreshAll()">Làm mới ↻</span>
+        </div>
+        <div class="logs-console">
+          <div class="log-line" *ngFor="let log of botLogs">
+            {{ log }}
+          </div>
+          <div class="log-line empty" *ngIf="botLogs.length === 0">
+            [Khởi động] Đang kết nối luồng báo giá phái sinh...
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- TAB 2: BACKTEST ĐỊNH LƯỢNG M5 -->
+  <div class="tab-content backtest-view" *ngIf="activeTab === 'BACKTEST'">
+    <section class="card backtest-controls-card">
+      <div class="card-header">
+        <h3>🔬 Cấu Hình Kiểm Thử Chiến Lược Phái Sinh M5 (VN30F1M)</h3>
+        <button class="btn-run-bt" [disabled]="isBacktesting" (click)="runBacktest()">
+          {{ isBacktesting ? 'Đang Tính Toán...' : '▶ CHẠY KIỂM THỬ ĐỊNH LƯỢNG' }}
+        </button>
+      </div>
+
+      <div class="controls-grid">
+        <div class="param-box">
+          <label>Khung Thời Gian (Ngày gần nhất):</label>
+          <select [(ngModel)]="btDays">
+            <option [value]="5">5 Phiên Gần Nhất (1 Tuần)</option>
+            <option [value]="10">10 Phiên Gần Nhất (2 Tuần)</option>
+            <option [value]="20">20 Phiên Gần Nhất (1 Tháng)</option>
+          </select>
+        </div>
+
+        <div class="param-box">
+          <label>Biên Độ Cắt Lỗ Stop Loss (Điểm):</label>
+          <input type="number" step="0.5" [(ngModel)]="btStopLoss">
+        </div>
+
+        <div class="param-box">
+          <label>Mục Tiêu Chốt Lời Take Profit (Điểm):</label>
+          <input type="number" step="0.5" [(ngModel)]="btTakeProfit">
+        </div>
+
+        <div class="param-box">
+          <label>Khoảng Cách Trailing Stop (Điểm):</label>
+          <input type="number" step="0.5" [(ngModel)]="btTrailingStop">
+        </div>
+      </div>
+    </section>
+
+    <!-- Backtest Results KPI -->
+    <div class="bt-results" *ngIf="backtestResult">
+      <div class="kpi-grid">
+        <div class="kpi-card profit">
+          <span class="k-lbl">Tổng Lợi Nhuận Ròng (2 HĐ)</span>
+          <span class="k-val">{{ backtestResult.totalNetPnlVnd > 0 ? '+' : '' }}{{ backtestResult.totalNetPnlVnd | number:'1.0-0' }} VNĐ</span>
+          <span class="k-sub">{{ backtestResult.totalPnlPoints > 0 ? '+' : '' }}{{ backtestResult.totalPnlPoints | number:'1.1-1' }} pts</span>
+        </div>
+
+        <div class="kpi-card">
+          <span class="k-lbl">Tỷ Lệ Thắng (Win Rate)</span>
+          <span class="k-val" [class.good]="backtestResult.winRatePercent >= 55">{{ backtestResult.winRatePercent }}%</span>
+          <span class="k-sub">{{ backtestResult.winningTrades }} Thắng / {{ backtestResult.losingTrades }} Thua</span>
+        </div>
+
+        <div class="kpi-card">
+          <span class="k-lbl">Profit Factor (Lãi/Lỗ)</span>
+          <span class="k-val" [class.good]="backtestResult.profitFactor >= 1.5">{{ backtestResult.profitFactor }}</span>
+          <span class="k-sub">Sharpe: {{ backtestResult.sharpeRatio }}</span>
+        </div>
+
+        <div class="kpi-card">
+          <span class="k-lbl">Sụt Giảm Tối Đa (Max DD)</span>
+          <span class="k-val down">-{{ backtestResult.maxDrawdownPoints | number:'1.1-1' }} pts</span>
+          <span class="k-sub">-{{ backtestResult.maxDrawdownVnd | number:'1.0-0' }} đ</span>
+        </div>
+
+        <div class="kpi-card">
+          <span class="k-lbl">Tổng Số Giao Dịch</span>
+          <span class="k-val">{{ backtestResult.totalTrades }} lệnh</span>
+          <span class="k-sub">{{ backtestResult.longTrades }} Long / {{ backtestResult.shortTrades }} Short</span>
+        </div>
+      </div>
+
+      <!-- Trade Log Table -->
+      <section class="card trade-table-card">
+        <div class="card-header">
+          <h3>📜 Chi Tiết Các Lệnh Khớp Trong Giai Đoạn Thử Nghiệm</h3>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Lệnh</th>
+                <th>Vị Thế</th>
+                <th>Số HĐ</th>
+                <th>Giá Vào</th>
+                <th>Giá Ra</th>
+                <th>Chênh Lệch</th>
+                <th>Lãi/Lỗ Ròng</th>
+                <th>Lý Do Đóng</th>
+                <th>Thời Gian Giữ</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let t of backtestResult.recentTrades">
+                <td>{{ t.tradeId }}</td>
+                <td>
+                  <span class="side-pill" [class.long]="t.side === 'LONG'" [class.short]="t.side === 'SHORT'">{{ t.side }}</span>
+                </td>
+                <td>{{ t.contracts }}</td>
+                <td>{{ t.entryPrice | number:'1.1-1' }}</td>
+                <td>{{ t.exitPrice | number:'1.1-1' }}</td>
+                <td [class.up]="t.pnlPoints > 0" [class.down]="t.pnlPoints < 0">
+                  {{ t.pnlPoints > 0 ? '+' : '' }}{{ t.pnlPoints | number:'1.1-1' }} pts
+                </td>
+                <td [class.up]="t.netPnlVnd > 0" [class.down]="t.netPnlVnd < 0">
+                  {{ t.netPnlVnd > 0 ? '+' : '' }}{{ t.netPnlVnd | number:'1.0-0' }} đ
+                </td>
+                <td>{{ t.exitReason }}</td>
+                <td>{{ t.durationMinutes }} phút</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- TAB 3: LỊCH SỬ GIAO DỊCH -->
+  <div class="tab-content history-view" *ngIf="activeTab === 'HISTORY'">
+    <section class="card history-card">
+      <div class="card-header">
+        <h3>📜 Sổ Lệnh Giao Dịch Phái Sinh T+0 Đã Tất Toán</h3>
+        <span class="count-badge">{{ positionHistory.length }} lệnh đã đóng</span>
+      </div>
+
+      <div class="empty-state" *ngIf="positionHistory.length === 0">
+        <p>Chưa có giao dịch phái sinh nào được đóng trong phiên làm việc này.</p>
+      </div>
+
+      <div class="table-responsive" *ngIf="positionHistory.length > 0">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID Vị Thế</th>
+              <th>Vị Thế</th>
+              <th>Số HĐ</th>
+              <th>Giá Mở</th>
+              <th>Giá Đóng</th>
+              <th>Lãi/Lỗ (pts)</th>
+              <th>Lãi/Lỗ Thực Tế</th>
+              <th>Lý Do Tất Toán</th>
+              <th>Thời Gian Mở</th>
+              <th>Thời Gian Đóng</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let h of positionHistory">
+              <td>{{ h.id }}</td>
+              <td><span class="side-pill" [class.long]="h.side === 'LONG'" [class.short]="h.side === 'SHORT'">{{ h.side }}</span></td>
+              <td>{{ h.contracts }} HĐ</td>
+              <td>{{ h.entryPrice | number:'1.1-1' }}</td>
+              <td>{{ h.closePrice | number:'1.1-1' }}</td>
+              <td [class.up]="h.pnlPoints > 0" [class.down]="h.pnlPoints < 0">
+                {{ h.pnlPoints > 0 ? '+' : '' }}{{ h.pnlPoints | number:'1.1-1' }} pts
+              </td>
+              <td [class.up]="h.netPnlVnd > 0" [class.down]="h.netPnlVnd < 0">
+                {{ h.netPnlVnd > 0 ? '+' : '' }}{{ h.netPnlVnd | number:'1.0-0' }} đ
+              </td>
+              <td>{{ h.closeReason }}</td>
+              <td>{{ h.openTime | date:'HH:mm:ss' }}</td>
+              <td>{{ h.closeTime | date:'HH:mm:ss' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
