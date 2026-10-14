@@ -264,7 +264,18 @@ public class VN30FuturesTradingService {
                 return;
             }
 
-            // 3. Nếu Bot Auto đang bật và chưa có vị thế mở -> Kiểm tra mở lệnh mới
+            // 3. KIỂM SOÁT GIỜ GIAO DỊCH PHÁI SINH HNX (08:45 - 11:30 và 13:00 - 14:25 từ T2-T6)
+            java.time.DayOfWeek dow = java.time.LocalDate.now().getDayOfWeek();
+            boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
+            boolean isFuturesMarketOpen = !isWeekend &&
+                ((nowTime.isAfter(LocalTime.of(8, 45)) && nowTime.isBefore(LocalTime.of(11, 30))) ||
+                 (nowTime.isAfter(LocalTime.of(13, 0)) && nowTime.isBefore(LocalTime.of(14, 25))));
+
+            if (!isFuturesMarketOpen) {
+                return; // Ngoài phiên khớp lệnh hoặc sau 14:25/cuối tuần: Nghiêm cấm mở vị thế!
+            }
+
+            // 4. Nếu Bot Auto đang bật và chưa có vị thế mở -> Kiểm tra mở lệnh mới
             if (autoTrading && openPositions.isEmpty()) {
                 FuturesSignalDto signal = strategyEngine.generateSignal();
                 if (signal != null && signal.getConfidenceScore() >= 75) {

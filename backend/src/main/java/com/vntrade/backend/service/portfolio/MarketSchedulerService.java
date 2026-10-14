@@ -25,12 +25,23 @@ public class MarketSchedulerService {
     private final WatchlistRepository watchlistRepository;
     private final StockPriceService stockPriceService;
     private final AlertService alertService;
+    private final PortfolioHistoryService portfolioHistoryService;
 
     /**
      * Chạy định kỳ mỗi 60 giây để giám sát vị thế đang mở và kiểm tra Stop Loss / Take Profit
      */
     @Scheduled(fixedDelay = 60000, initialDelay = 15000)
     public void monitorActiveTradesAndRisk() {
+        // Chỉ chạy trong khung giờ giao dịch sàn HOSE/HNX (09:00 - 15:00 từ Thứ 2 đến Thứ 6)
+        java.time.DayOfWeek dow = java.time.LocalDate.now().getDayOfWeek();
+        boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
+        java.time.LocalTime nowTime = java.time.LocalTime.now();
+        boolean isTradingHours = !isWeekend && nowTime.isAfter(java.time.LocalTime.of(9, 0)) && nowTime.isBefore(java.time.LocalTime.of(15, 0));
+        if (!isTradingHours) {
+            log.debug("MarketScheduler: Ngoài giờ khớp lệnh HOSE/HNX ({}), tạm dừng cập nhật tick giá.", nowTime);
+            return;
+        }
+
         log.debug("Scheduler: Monitoring active trades and risk limits at {}", LocalDateTime.now());
         List<Trade> openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
 
@@ -130,7 +141,13 @@ public class MarketSchedulerService {
      */
     @Scheduled(cron = "0 0 15 * * MON-FRI", zone = "Asia/Ho_Chi_Minh")
     public void postMarketReview() {
-        log.info("Scheduler: Post-market review executed");
+        log.info("Scheduler: Post-market review executed at 15:00 - Recording end-of-day portfolio snapshot");
+        try {
+            portfolioHistoryService.recordCurrentSnapshot();
+        } catch (Exception e) {
+            log.warn("Lỗi ghi nhận snapshot cuối phiên 15:00: {}", e.getMessage());
+        }
+
         alertService.createAlert(
             "PORTFOLIO",
             "DISCIPLINE_REMINDER",

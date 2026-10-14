@@ -18,11 +18,16 @@ export class BotComponent implements OnInit, OnDestroy {
   status: BotStatus = {
     running: true,
     mode: 'LIVE_PAPER_MONEY',
-    capital: 20000000,
+    capital: 100000000,
+    availableCash: 100000000,
+    investedStockValue: 0,
+    currentNav: 100000000,
+    cashRatioPercent: 100,
+    stockRatioPercent: 0,
     todayRealizedPnl: 0,
     todayTradesCount: 0,
-    dailyTarget: 300000,
-    circuitBreakerLimit: 400000,
+    dailyTarget: 1500000,
+    circuitBreakerLimit: 2000000,
     recentLogs: []
   };
 
@@ -35,6 +40,12 @@ export class BotComponent implements OnInit, OnDestroy {
   preMarket?: PreMarketSentiment;
   oversoldBounce?: OversoldBounce;
   activeTab: 'OVERVIEW' | 'RADAR' | 'BOUNCE' = 'OVERVIEW';
+
+  // Chế độ xem & Bộ lọc theo ngày cho Bảng Hiệu Suất
+  perfViewMode: 'DAILY' | 'MONTHLY' = 'DAILY';
+  dateFilterPreset: 'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' = 'ALL';
+  filterFromDate: string = '';
+  filterToDate: string = '';
 
   selectedLogCategory: 'ALL' | 'BOT' | 'DEFCON' | 'RRG' | 'LIQUIDITY' | 'TRADE' = 'ALL';
   filteredLogs: string[] = [];
@@ -59,6 +70,7 @@ export class BotComponent implements OnInit, OnDestroy {
     this.pollSub = setInterval(() => {
       this.loadStatusOnly();
       this.loadPositions();
+      this.loadComparison();
     }, 5000);
 
     // Lắng nghe SSE stream đẩy log và lệnh theo thời gian thực
@@ -74,6 +86,10 @@ export class BotComponent implements OnInit, OnDestroy {
         } else if (event.event === 'BOT_TRADE_OPENED' || event.event === 'BOT_TRADE_CLOSED') {
           this.loadPositions();
           this.loadStatusOnly();
+          this.loadComparison();
+          this.cdr.markForCheck();
+        } else if (event.event === 'EQUITY_SNAPSHOT') {
+          this.loadComparison();
           this.cdr.markForCheck();
         }
       },
@@ -319,5 +335,70 @@ export class BotComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       }
     }, 6000);
+  }
+
+  // Quản lý Bộ Lọc Theo Ngày (Date Filter Methods)
+  setPerfViewMode(mode: 'DAILY' | 'MONTHLY'): void {
+    this.perfViewMode = mode;
+    this.cdr.markForCheck();
+  }
+
+  setDateFilterPreset(preset: 'ALL' | 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM'): void {
+    this.dateFilterPreset = preset;
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    if (preset === 'TODAY') {
+      this.filterFromDate = todayStr;
+      this.filterToDate = todayStr;
+    } else if (preset === 'WEEK') {
+      const past = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+      this.filterFromDate = past.toISOString().split('T')[0];
+      this.filterToDate = todayStr;
+    } else if (preset === 'MONTH') {
+      const past = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+      this.filterFromDate = past.toISOString().split('T')[0];
+      this.filterToDate = todayStr;
+    } else if (preset === 'ALL') {
+      this.filterFromDate = '';
+      this.filterToDate = '';
+    }
+    this.cdr.markForCheck();
+  }
+
+  applyCustomDateFilter(): void {
+    this.dateFilterPreset = 'CUSTOM';
+    this.cdr.markForCheck();
+  }
+
+  resetDateFilter(): void {
+    this.dateFilterPreset = 'ALL';
+    this.filterFromDate = '';
+    this.filterToDate = '';
+    this.cdr.markForCheck();
+  }
+
+  get filteredDailyBreakdown(): any[] {
+    const list = this.comparison?.dailyBreakdown || [];
+    if (!this.filterFromDate && !this.filterToDate) {
+      return list;
+    }
+    return list.filter(item => {
+      if (!item.date) return true;
+      if (this.filterFromDate && item.date < this.filterFromDate) return false;
+      if (this.filterToDate && item.date > this.filterToDate) return false;
+      return true;
+    });
+  }
+
+  get filteredDailyTotalProfit(): number {
+    return this.filteredDailyBreakdown.reduce((sum, item) => sum + (item.netProfitVnd || 0), 0);
+  }
+
+  get filteredDailyWinRate(): number {
+    const list = this.filteredDailyBreakdown;
+    if (list.length === 0) return 0;
+    const winDays = list.filter(item => (item.netProfitVnd || 0) > 0).length;
+    return Math.round((winDays / list.length) * 100);
   }
 }

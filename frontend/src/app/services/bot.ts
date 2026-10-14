@@ -25,6 +25,19 @@ export interface PeriodComparisonItem {
   performanceVerdict: string;
 }
 
+export interface DailyPerformanceItem {
+  date: string;
+  dateLabel: string;
+  startNav: number;
+  endNav: number;
+  netProfitVnd: number;
+  returnPercent: number;
+  winRate: number;
+  tradesCount: number;
+  openPositionsCount: number;
+  statusBadge: string;
+}
+
 export interface MonthlyPerformanceItem {
   monthLabel: string;
   startNav: number;
@@ -50,6 +63,7 @@ export interface PerformanceComparison {
   oneMonthAgo: PeriodComparisonItem;
   threeMonthsAgo: PeriodComparisonItem;
   monthlyBreakdown: MonthlyPerformanceItem[];
+  dailyBreakdown?: DailyPerformanceItem[];
   sharpeRatio: number;
   maxDrawdownPercent: number;
   profitFactor: number;
@@ -113,6 +127,11 @@ export interface BotStatus {
   running: boolean;
   mode: string;
   capital: number;
+  availableCash?: number;
+  investedStockValue?: number;
+  currentNav?: number;
+  cashRatioPercent?: number;
+  stockRatioPercent?: number;
   todayRealizedPnl: number;
   todayTradesCount: number;
   dailyTarget: number;

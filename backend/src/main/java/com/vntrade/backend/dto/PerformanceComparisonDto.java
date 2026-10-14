@@ -33,12 +33,32 @@ public class PerformanceComparisonDto {
     // Monthly breakdown (Lịch sử theo từng tháng)
     private List<MonthlyPerformanceItem> monthlyBreakdown;
 
+    // Daily breakdown (Lịch sử theo từng ngày cho phép lọc theo ngày)
+    private List<DailyPerformanceItem> dailyBreakdown;
+
     // Quantitative metrics summary
     private BigDecimal sharpeRatio;
     private BigDecimal maxDrawdownPercent;
     private BigDecimal profitFactor;
     private String hedgeFundRating;
     private String executiveSummary;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class DailyPerformanceItem {
+        private LocalDate date;
+        private String dateLabel;
+        private BigDecimal startNav;
+        private BigDecimal endNav;
+        private BigDecimal netProfitVnd;
+        private BigDecimal returnPercent;
+        private BigDecimal winRate;
+        private int tradesCount;
+        private int openPositionsCount;
+        private String statusBadge;
+    }
 
     @Data
     @Builder

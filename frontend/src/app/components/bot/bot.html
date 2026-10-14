@@ -66,22 +66,57 @@
 
   <!-- 4 Main Financial KPI Cards -->
   <div class="kpi-grid">
-    <!-- Card 1: Vốn Tài Khoản -->
+    <!-- Card 1: Tổng Tài Sản (NAV Hiện Tại) -->
     <div class="kpi-card glass-card">
       <div class="kpi-header">
-        <span class="kpi-label">VỐN KHỞI ĐIỂM (NAV)</span>
+        <span class="kpi-label">TỔNG TÀI SẢN (NAV HIỆN TẠI)</span>
         <span class="kpi-icon">💼</span>
       </div>
       <div class="kpi-value text-cyan">
-        {{ status.capital | number:'1.0-0' }} <span class="currency">đ</span>
+        {{ (status.currentNav || status.capital) | number:'1.0-0' }} <span class="currency">đ</span>
       </div>
       <div class="kpi-footer">
-        <span class="badge-subtle">Paper Money (Giá thật sàn)</span>
-        <span class="sub-text">Sẵn sàng Ngày 1 sáng mai (09:00)</span>
+        <span class="badge-subtle">Vốn gốc: {{ status.capital | number:'1.0-0' }} đ</span>
+        <span class="sub-text" [class.text-green]="((status.currentNav || status.capital) - status.capital) >= 0" [class.text-red]="((status.currentNav || status.capital) - status.capital) < 0">
+          Lũy kế: {{ ((status.currentNav || status.capital) - status.capital) > 0 ? '+' : '' }}{{ ((status.currentNav || status.capital) - status.capital) | number:'1.0-0' }} đ
+        </span>
       </div>
     </div>
 
-    <!-- Card 2: Lãi Chốt Hôm Nay -->
+    <!-- Card 2: Tiền Mặt Có Thể Đầu Tư (Khả Dụng) -->
+    <div class="kpi-card glass-card kpi-card-cash">
+      <div class="kpi-header">
+        <span class="kpi-label text-emerald">TIỀN MẶT CÓ THỂ ĐẦU TƯ</span>
+        <span class="kpi-icon">💵</span>
+      </div>
+      <div class="kpi-value text-emerald">
+        {{ (status.availableCash !== undefined ? status.availableCash : (status.capital + status.todayRealizedPnl)) | number:'1.0-0' }} <span class="currency">đ</span>
+      </div>
+      <div class="kpi-footer">
+        <span class="badge-cash-ratio">Tỷ trọng: {{ (status.cashRatioPercent !== undefined ? status.cashRatioPercent : 100) | number:'1.1-1' }}% NAV</span>
+        <span class="badge-avail-ready" [class.badge-locked]="status.todayRealizedPnl <= -status.circuitBreakerLimit"
+          [title]="status.todayRealizedPnl <= -status.circuitBreakerLimit ? 'Cầu chì kích hoạt: Khoản lỗ chốt hôm nay (-' + (-status.todayRealizedPnl | number:'1.0-0') + ' đ) vượt giới hạn an toàn ngày (-' + (status.circuitBreakerLimit | number:'1.0-0') + ' đ). Bot tạm khóa giải ngân để bảo toàn 68 triệu tiền mặt và tránh mua gỡ lệnh bốc đồng.' : 'Tiền mặt sẵn sàng giải ngân khi có điểm nổ thỏa mãn kỷ luật T1.'">
+          {{ status.todayRealizedPnl <= -status.circuitBreakerLimit ? '🔒 Khóa mua (Cầu chì)' : '✅ Khả dụng giải ngân' }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Card 3: Giá Trị Cổ Phiếu Nắm Giữ -->
+    <div class="kpi-card glass-card">
+      <div class="kpi-header">
+        <span class="kpi-label">GIÁ TRỊ CỔ PHIẾU NẮM GIỮ</span>
+        <span class="kpi-icon">📈</span>
+      </div>
+      <div class="kpi-value text-gold">
+        {{ (status.investedStockValue !== undefined ? status.investedStockValue : 0) | number:'1.0-0' }} <span class="currency">đ</span>
+      </div>
+      <div class="kpi-footer">
+        <span class="sub-text">Đang giữ: <strong>{{ openPositions.length }} mã</strong></span>
+        <span class="badge-stock-ratio">Tỷ trọng: {{ (status.stockRatioPercent !== undefined ? status.stockRatioPercent : 0) | number:'1.1-1' }}% NAV</span>
+      </div>
+    </div>
+
+    <!-- Card 4: Lãi Thực Hiện Hôm Nay -->
     <div class="kpi-card glass-card">
       <div class="kpi-header">
         <span class="kpi-label">LÃI THỰC HIỆN HÔM NAY</span>
@@ -98,7 +133,7 @@
       </div>
     </div>
 
-    <!-- Card 3: Kỳ Vọng Forward Test Thực Tế (Forward Test Metrics) -->
+    <!-- Card 5: Kỳ Vọng Forward Test Thực Tế -->
     <div class="kpi-card glass-card">
       <div class="kpi-header">
         <span class="kpi-label">FORWARD TEST EXPECTANCY</span>
@@ -118,18 +153,18 @@
       </div>
     </div>
 
-    <!-- Card 4: Cầu Chì Bảo Vệ Vốn Ngày -->
+    <!-- Card 6: Cầu Chì Bảo Vệ DEFCON-1 -->
     <div class="kpi-card glass-card">
       <div class="kpi-header">
-        <span class="kpi-label">CẦU CHÌ BẢO VỆ VỐN (-2.0%)</span>
+        <span class="kpi-label">CẦU CHÌ BẢO VỆ DEFCON-1</span>
         <span class="kpi-icon">🛡️</span>
       </div>
-      <div class="kpi-value text-muted">
-        -{{ status.circuitBreakerLimit | number:'1.0-0' }} <span class="currency">đ</span>
+      <div class="kpi-value" [class.text-red]="status.todayRealizedPnl <= -status.circuitBreakerLimit" [class.text-muted]="status.todayRealizedPnl > -status.circuitBreakerLimit">
+        {{ status.todayRealizedPnl <= -status.circuitBreakerLimit ? 'ĐÃ KÍCH HOẠT' : ('-' + (status.circuitBreakerLimit | number:'1.0-0') + ' đ') }}
       </div>
       <div class="kpi-footer">
-        <span class="status-shield safe">
-          <span class="shield-dot"></span> DEFCON-1: AN TOÀN
+        <span class="status-shield" [class.danger]="status.todayRealizedPnl <= -status.circuitBreakerLimit" [class.safe]="status.todayRealizedPnl > -status.circuitBreakerLimit">
+          <span class="shield-dot"></span> {{ status.todayRealizedPnl <= -status.circuitBreakerLimit ? 'DEFCON-1: KHÓA MUA' : 'DEFCON-1: AN TOÀN' }}
         </span>
         <span class="sub-text">MaxDD kiểm soát &lt; {{ status.maxDrawdownThreshold || 19.04 }}%</span>
       </div>
@@ -492,43 +527,155 @@
       </div>
     </div>
 
-    <!-- Monthly Breakdown Table -->
-    <div class="monthly-table-wrap" *ngIf="comparison.monthlyBreakdown?.length">
-      <h3 class="sub-table-title">📅 Phân Bổ Hiệu Suất Theo Từng Tháng</h3>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>THỜI GIAN</th>
-            <th>NAV ĐẦU KỲ</th>
-            <th>NAV CUỐI KỲ</th>
-            <th>LÃI / LỖ RÒNG</th>
-            <th>TỶ SUẤT (%)</th>
-            <th>TỶ LỆ THẮNG</th>
-            <th>SỐ LỆNH ĐÓNG</th>
-            <th>ĐÁNH GIÁ</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let m of comparison.monthlyBreakdown">
-            <td class="font-bold">{{ m.monthLabel }}</td>
-            <td class="font-mono text-secondary">{{ m.startNav | number:'1.0-0' }} đ</td>
-            <td class="font-mono font-bold">{{ m.endNav | number:'1.0-0' }} đ</td>
-            <td class="font-mono font-bold" [class.text-green]="m.netProfitVnd >= 0" [class.text-red]="m.netProfitVnd < 0">
-              {{ m.netProfitVnd >= 0 ? '+' : '' }}{{ m.netProfitVnd | number:'1.0-0' }} đ
-            </td>
-            <td class="font-mono font-bold" [class.text-green]="m.returnPercent >= 0" [class.text-red]="m.returnPercent < 0">
-              {{ m.returnPercent >= 0 ? '+' : '' }}{{ m.returnPercent | number:'1.2-2' }}%
-            </td>
-            <td class="font-mono">{{ m.winRate | number:'1.1-1' }}%</td>
-            <td class="font-mono">{{ m.tradesCount }} lệnh</td>
-            <td>
-              <span class="badge-status-pill" [class.profit]="m.statusBadge === 'PROFITABLE'" [class.flat]="m.statusBadge === 'FLAT'">
-                {{ m.statusBadge === 'PROFITABLE' ? 'LÃI RÒNG' : m.statusBadge === 'FLAT' ? 'HÒA VỐN' : 'ĐIỀU CHỈNH' }}
-              </span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- Performance Breakdown Section: Daily & Monthly with Date Filtering -->
+    <div class="perf-breakdown-card">
+      <div class="breakdown-header-bar">
+        <!-- View Mode Switcher -->
+        <div class="view-mode-tabs">
+          <button class="mode-tab-btn" [class.active]="perfViewMode === 'DAILY'" (click)="setPerfViewMode('DAILY')">
+            📅 Theo Từng Ngày (DoD)
+          </button>
+          <button class="mode-tab-btn" [class.active]="perfViewMode === 'MONTHLY'" (click)="setPerfViewMode('MONTHLY')">
+            📆 Theo Từng Tháng (MoM)
+          </button>
+        </div>
+
+        <!-- Filter Presets and Date Picker -->
+        <div class="date-filter-toolbar">
+          <div class="preset-buttons">
+            <button class="filter-pill" [class.active]="dateFilterPreset === 'ALL'" (click)="setDateFilterPreset('ALL')">
+              Tất Cả
+            </button>
+            <button class="filter-pill" [class.active]="dateFilterPreset === 'TODAY'" (click)="setDateFilterPreset('TODAY')">
+              Hôm Nay
+            </button>
+            <button class="filter-pill" [class.active]="dateFilterPreset === 'WEEK'" (click)="setDateFilterPreset('WEEK')">
+              7 Ngày Qua
+            </button>
+            <button class="filter-pill" [class.active]="dateFilterPreset === 'MONTH'" (click)="setDateFilterPreset('MONTH')">
+              30 Ngày Qua
+            </button>
+          </div>
+
+          <div class="custom-date-range">
+            <div class="date-input-wrap">
+              <span class="date-label">Từ:</span>
+              <input type="date" class="date-picker-input" [(ngModel)]="filterFromDate" (change)="applyCustomDateFilter()">
+            </div>
+            <div class="date-input-wrap">
+              <span class="date-label">Đến:</span>
+              <input type="date" class="date-picker-input" [(ngModel)]="filterToDate" (change)="applyCustomDateFilter()">
+            </div>
+            <button class="btn-reset-filter" (click)="resetDateFilter()" title="Xóa bộ lọc" *ngIf="filterFromDate || filterToDate">
+              ↺
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Result Summary Banner -->
+      <div class="filter-summary-banner" *ngIf="perfViewMode === 'DAILY' && filteredDailyBreakdown.length">
+        <span class="summary-metric">
+          🔍 Đang hiển thị: <strong>{{ filteredDailyBreakdown.length }} phiên</strong>
+        </span>
+        <span class="summary-separator">|</span>
+        <span class="summary-metric">
+          Tổng Lãi/Lỗ: 
+          <strong [class.text-green]="filteredDailyTotalProfit >= 0" [class.text-red]="filteredDailyTotalProfit < 0">
+            {{ filteredDailyTotalProfit >= 0 ? '+' : '' }}{{ filteredDailyTotalProfit | number:'1.0-0' }} đ
+          </strong>
+        </span>
+        <span class="summary-separator">|</span>
+        <span class="summary-metric">
+          Tỷ lệ phiên dương: <strong>{{ filteredDailyWinRate }}%</strong>
+        </span>
+      </div>
+
+      <!-- 1. Daily Breakdown Table -->
+      <div class="table-responsive" *ngIf="perfViewMode === 'DAILY'">
+        <table class="data-table" *ngIf="filteredDailyBreakdown.length > 0; else noDailyData">
+          <thead>
+            <tr>
+              <th>NGÀY GIAO DỊCH</th>
+              <th>NAV ĐẦU NGÀY</th>
+              <th>NAV CUỐI NGÀY</th>
+              <th>LÃI / LỖ PHIÊN</th>
+              <th>TỶ SUẤT (%)</th>
+              <th>VỊ THẾ MỞ</th>
+              <th>LỆNH ĐÓNG</th>
+              <th>ĐÁNH GIÁ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let d of filteredDailyBreakdown" [class.today-row]="d.dateLabel.includes('Hôm nay')">
+              <td class="font-bold">
+                <span class="daily-badge" *ngIf="d.dateLabel.includes('Hôm nay')">LIVE</span>
+                {{ d.dateLabel }}
+              </td>
+              <td class="font-mono text-secondary">{{ d.startNav | number:'1.0-0' }} đ</td>
+              <td class="font-mono font-bold">{{ d.endNav | number:'1.0-0' }} đ</td>
+              <td class="font-mono font-bold" [class.text-green]="d.netProfitVnd >= 0" [class.text-red]="d.netProfitVnd < 0">
+                {{ d.netProfitVnd >= 0 ? '+' : '' }}{{ d.netProfitVnd | number:'1.0-0' }} đ
+              </td>
+              <td class="font-mono font-bold" [class.text-green]="d.returnPercent >= 0" [class.text-red]="d.returnPercent < 0">
+                {{ d.returnPercent >= 0 ? '+' : '' }}{{ d.returnPercent | number:'1.2-2' }}%
+              </td>
+              <td class="font-mono">{{ d.openPositionsCount }} mã</td>
+              <td class="font-mono">{{ d.tradesCount }} lệnh</td>
+              <td>
+                <span class="badge-status-pill" [class.profit]="d.statusBadge === 'PROFITABLE'" [class.flat]="d.statusBadge === 'FLAT'">
+                  {{ d.statusBadge === 'PROFITABLE' ? 'LÃI RÒNG' : d.statusBadge === 'FLAT' ? 'BẢO TOÀN' : 'ĐIỀU CHỈNH' }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <ng-template #noDailyData>
+          <div class="empty-state py-4">
+            <div class="empty-icon">📅</div>
+            <div class="empty-title">Không tìm thấy dữ liệu trong khoảng ngày đã chọn</div>
+            <p class="empty-desc">Vui lòng chọn khoảng thời gian khác hoặc nhấn "Tất Cả" để xem toàn bộ lịch sử.</p>
+          </div>
+        </ng-template>
+      </div>
+
+      <!-- 2. Monthly Breakdown Table -->
+      <div class="table-responsive" *ngIf="perfViewMode === 'MONTHLY'">
+        <table class="data-table" *ngIf="comparison.monthlyBreakdown?.length">
+          <thead>
+            <tr>
+              <th>THỜI GIAN</th>
+              <th>NAV ĐẦU KỲ</th>
+              <th>NAV CUỐI KỲ</th>
+              <th>LÃI / LỖ RÒNG</th>
+              <th>TỶ SUẤT (%)</th>
+              <th>TỶ LỆ THẮNG</th>
+              <th>SỐ LỆNH ĐÓNG</th>
+              <th>ĐÁNH GIÁ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let m of comparison.monthlyBreakdown">
+              <td class="font-bold">{{ m.monthLabel }}</td>
+              <td class="font-mono text-secondary">{{ m.startNav | number:'1.0-0' }} đ</td>
+              <td class="font-mono font-bold">{{ m.endNav | number:'1.0-0' }} đ</td>
+              <td class="font-mono font-bold" [class.text-green]="m.netProfitVnd >= 0" [class.text-red]="m.netProfitVnd < 0">
+                {{ m.netProfitVnd >= 0 ? '+' : '' }}{{ m.netProfitVnd | number:'1.0-0' }} đ
+              </td>
+              <td class="font-mono font-bold" [class.text-green]="m.returnPercent >= 0" [class.text-red]="m.returnPercent < 0">
+                {{ m.returnPercent >= 0 ? '+' : '' }}{{ m.returnPercent | number:'1.2-2' }}%
+              </td>
+              <td class="font-mono">{{ m.winRate | number:'1.1-1' }}%</td>
+              <td class="font-mono">{{ m.tradesCount }} lệnh</td>
+              <td>
+                <span class="badge-status-pill" [class.profit]="m.statusBadge === 'PROFITABLE'" [class.flat]="m.statusBadge === 'FLAT'">
+                  {{ m.statusBadge === 'PROFITABLE' ? 'LÃI RÒNG' : m.statusBadge === 'FLAT' ? 'HÒA VỐN' : 'ĐIỀU CHỈNH' }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
   </ng-container>

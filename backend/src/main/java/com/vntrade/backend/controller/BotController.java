@@ -68,6 +68,23 @@ public class BotController {
         status.put("cycleLabel", botService.getCycleLabel());
         status.put("executionStrategy", botService.getExecutionStrategy());
         status.put("forwardTestClosedTradesCount", botService.getForwardTestClosedTradesCount());
+
+        // Phân bổ tài sản & Tiền mặt khả dụng đầu tư
+        BigDecimal availableCash = botService.getAvailableCash();
+        BigDecimal investedStockValue = botService.getInvestedStockValue();
+        BigDecimal currentNav = botService.getCurrentNav();
+        BigDecimal cashRatio = currentNav.compareTo(BigDecimal.ZERO) > 0
+            ? availableCash.divide(currentNav, 4, java.math.RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+            : BigDecimal.ZERO;
+        BigDecimal stockRatio = currentNav.compareTo(BigDecimal.ZERO) > 0
+            ? investedStockValue.divide(currentNav, 4, java.math.RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+            : BigDecimal.ZERO;
+
+        status.put("availableCash", availableCash);
+        status.put("investedStockValue", investedStockValue);
+        status.put("currentNav", currentNav);
+        status.put("cashRatioPercent", cashRatio);
+        status.put("stockRatioPercent", stockRatio);
         return ResponseEntity.ok(status);
     }
 

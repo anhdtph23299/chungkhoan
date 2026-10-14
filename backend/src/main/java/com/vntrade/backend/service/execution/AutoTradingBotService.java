@@ -77,6 +77,8 @@ public class AutoTradingBotService {
     private String executionStrategy = "FORWARD_TEST_T1_CORE_DEFCON";
     private BigDecimal maxDrawdownThreshold = BigDecimal.valueOf(20.0); // Ngưỡng MaxDD cảnh báo: 20.0%
     private BigDecimal riskPerTradePercent = BigDecimal.valueOf(1.50); // Rủi ro cho phép mỗi lệnh: 1.50% NAV
+    private final java.util.Map<String, LocalDateTime> lastT25AlertTime = new java.util.concurrent.ConcurrentHashMap<>();
+    private LocalDateTime lastCircuitBreakerLogTime = null;
 
     public List<java.util.Map<String, Object>> getBreakoutWatchlist() {
         return breakoutWatchlist;
@@ -125,6 +127,43 @@ public class AutoTradingBotService {
         }
     }
 
+    public BigDecimal getAvailableCash() {
+        List<Trade> openTrades = tradeRepository.findOpenBuyTrades();
+        List<Trade> allTrades = tradeRepository.findAllByOrderByTradeDateDesc();
+        BigDecimal realized = allTrades.stream()
+            .filter(t -> "closed".equals(t.getStatus()) && t.getPnl() != null)
+            .map(Trade::getPnl)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal invested = openTrades.stream()
+            .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal cash = accountCapital.add(realized).subtract(invested);
+        return cash.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cash;
+    }
+
+    public BigDecimal getInvestedStockValue() {
+        List<Trade> openTrades = tradeRepository.findOpenBuyTrades();
+        return openTrades.stream()
+            .map(t -> {
+                BigDecimal curPrice = null;
+                try {
+                    var quote = stockPriceService.getQuote(t.getSymbol());
+                    if (quote != null) {
+                        curPrice = quote.getPrice();
+                    }
+                } catch (Exception ignored) {}
+                if (curPrice == null || curPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                    curPrice = t.getPrice();
+                }
+                return curPrice.multiply(BigDecimal.valueOf(t.getQuantity()));
+            })
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    public BigDecimal getCurrentNav() {
+        return getAvailableCash().add(getInvestedStockValue());
+    }
+
     public BigDecimal getDailyProfitTarget() {
         return dailyProfitTarget;
     }
@@ -134,10 +173,25 @@ public class AutoTradingBotService {
     }
 
     public BigDecimal getTodayRealizedPnl() {
+        LocalDate today = LocalDate.now();
+        BigDecimal dbRealizedToday = tradeRepository.findAll().stream()
+            .filter(t -> "closed".equals(t.getStatus()) && today.equals(t.getCloseDate()) && t.getPnl() != null)
+            .map(Trade::getPnl)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (dbRealizedToday.compareTo(BigDecimal.ZERO) != 0) {
+            return dbRealizedToday;
+        }
         return todayRealizedPnl;
     }
 
     public int getTodayTradesCount() {
+        LocalDate today = LocalDate.now();
+        long dbCount = tradeRepository.findAll().stream()
+            .filter(t -> "closed".equals(t.getStatus()) && today.equals(t.getCloseDate()))
+            .count();
+        if (dbCount > 0) {
+            return (int) dbCount;
+        }
         return todayTradesCount;
     }
 
@@ -244,6 +298,18 @@ public class AutoTradingBotService {
     public void executeBotCycle() {
         if (!isRunning) return;
 
+        // Kiểm tra giờ giao dịch sàn HOSE/HNX: Ngoài giờ giao dịch chính thức (sau 15:00 hoặc cuối tuần), tạm dừng quét để tiết kiệm tài nguyên
+        if (enforceMarketHours && !"SIMULATION".equalsIgnoreCase(mode)) {
+            java.time.DayOfWeek dow = LocalDate.now().getDayOfWeek();
+            boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
+            java.time.LocalTime nowTime = java.time.LocalTime.now();
+            boolean isTradingHours = !isWeekend && nowTime.isAfter(java.time.LocalTime.of(9, 0)) && nowTime.isBefore(java.time.LocalTime.of(15, 0));
+            if (!isTradingHours) {
+                log.debug("AutoTradingBot: Ngoài phiên giao dịch sàn HOSE/HNX ({}), tạm dừng chu kỳ quét.", nowTime);
+                return;
+            }
+        }
+
         // 0. KIỂM SOÁT NGUỒN DỮ LIỆU THẬT (DATA FEED INTEGRITY: REAL vs STALE)
         // Khi mất dữ liệu thật hoặc toàn bộ API sàn không phản hồi, dừng mở vị thế mới ngay lập tức
         if (!stockPriceService.isMarketDataConnected()) {
@@ -265,8 +331,12 @@ public class AutoTradingBotService {
         }
 
         // 3. Kiểm tra Circuit Breaker nội bộ ngày (Max Loss Limit)
-        if (todayRealizedPnl.compareTo(dailyMaxLossLimit.negate()) <= 0) {
-            addLog("⚠️ CẦU CHÌ BẢO VỆ VỐN ĐÃ KÍCH HOẠT: Mức lỗ trong ngày đạt -" + dailyMaxLossLimit + " đ. Bot tạm dừng mở vị thế mới hôm nay.");
+        BigDecimal currentTodayPnl = getTodayRealizedPnl();
+        if (currentTodayPnl.compareTo(dailyMaxLossLimit.negate()) <= 0) {
+            if (lastCircuitBreakerLogTime == null || java.time.Duration.between(lastCircuitBreakerLogTime, LocalDateTime.now()).toMinutes() >= 15) {
+                addLog("⚠️ CẦU CHÌ BẢO VỆ VỐN ĐÃ KÍCH HOẠT: Mức lỗ trong ngày đạt -" + dailyMaxLossLimit + " đ. Bot tạm dừng mở vị thế mới hôm nay.");
+                lastCircuitBreakerLogTime = LocalDateTime.now();
+            }
             return;
         }
 
@@ -355,7 +425,32 @@ public class AutoTradingBotService {
                     continue;
                 }
 
+                // 1.1. KIỂM SOÁT TIỀN MẶT KHẢ DỤNG: Nghiêm cấm mua vượt quá số dư tiền mặt của tài khoản
+                BigDecimal currentInvested = openTrades.stream()
+                    .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+                BigDecimal availableCash = accountCapital.add(todayRealizedPnl).subtract(currentInvested);
+
+                if (availableCash.compareTo(BigDecimal.valueOf(2_000_000)) <= 0) {
+                    addLog(String.format("🛡️ [QUẢN TRỊ TIỀN MẶT] Bỏ qua %s: Tiền mặt khả dụng còn %,.0f đ (dưới đệm an toàn 2.000.000 đ). Không giải ngân thêm.",
+                        scan.getSymbol(), availableCash.doubleValue()));
+                    continue;
+                }
+
                 int finalShares = sizing.getMaxSharesToBuy();
+                if (proposedCost.compareTo(availableCash) > 0) {
+                    int maxAffordable = availableCash.divide(scan.getPrice(), 0, RoundingMode.FLOOR).intValue();
+                    maxAffordable = (maxAffordable / 100) * 100; // Làm tròn lô 100 HOSE
+                    if (maxAffordable < 100) {
+                        addLog(String.format("🛡️ [QUẢN TRỊ TIỀN MẶT] Bỏ qua %s: Tiền mặt còn %,.0f đ không đủ mua tối thiểu 1 lô 100 cp (cần %,.0f đ).",
+                            scan.getSymbol(), availableCash.doubleValue(), scan.getPrice().multiply(BigDecimal.valueOf(100)).doubleValue()));
+                        continue;
+                    }
+                    finalShares = maxAffordable;
+                    proposedCost = scan.getPrice().multiply(BigDecimal.valueOf(finalShares));
+                    addLog(String.format("⚖️ [ĐIỀU CHỈNH KHỐI LƯỢNG] %s: Hạ quy mô từ %d cp xuống %d cp (%,.0f đ) để vừa vặn tiền mặt khả dụng %,.0f đ.",
+                        scan.getSymbol(), sizing.getMaxSharesToBuy(), finalShares, proposedCost.doubleValue(), availableCash.doubleValue()));
+                }
 
                 // =========================================================================
                 // 2. CHẾ ĐỘ BÓNG MỜ (SHADOW MODE): THU THẬP ĐÁNH GIÁ 6 TẦNG LỌC NÂNG CAO
@@ -567,8 +662,12 @@ public class AutoTradingBotService {
                 if (!isT25SettlementReady(trade.getTradeDate(), now)) {
                     String t25Desc = getT25StatusDescription(trade.getTradeDate(), now);
                     if (trade.getStopLoss() != null && currentPrice.compareTo(trade.getStopLoss()) <= 0) {
-                        addLog(String.format("⚠️ [KHÓA THANH KHOẢN T+2.5] %s vi phạm SL (%s đ <= %s đ) nhưng đang ở trạng thái %s (chưa thể bán theo luật). Bot trực canh thoát hàng ngay phiên chiều 13:00.",
-                            trade.getSymbol(), currentPrice, trade.getStopLoss(), t25Desc));
+                        LocalDateTime lastWarn = lastT25AlertTime.get(trade.getSymbol());
+                        if (lastWarn == null || java.time.Duration.between(lastWarn, now).toMinutes() >= 15) {
+                            lastT25AlertTime.put(trade.getSymbol(), now);
+                            addLog(String.format("⚠️ [KHÓA THANH KHOẢN T+2.5] %s vi phạm SL (%s đ <= %s đ) nhưng đang ở trạng thái %s (chưa thể bán theo luật). Bot trực canh thoát hàng ngay phiên chiều 13:00.",
+                                trade.getSymbol(), currentPrice, trade.getStopLoss(), t25Desc));
+                        }
                     }
                     continue;
                 }

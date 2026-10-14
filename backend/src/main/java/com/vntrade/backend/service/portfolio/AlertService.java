@@ -27,6 +27,17 @@ public class AlertService {
     }
 
     public Alert createAlert(String symbol, String alertType, String title, String message, BigDecimal price, String severity) {
+        // Chống spam: Không tạo lặp lại alert cùng loại cho cùng 1 mã trong 15 phút
+        java.time.LocalDateTime threshold = java.time.LocalDateTime.now().minusMinutes(15);
+        boolean existsRecent = alertRepository.findAllByOrderByCreatedAtDesc().stream()
+            .anyMatch(a -> a.getSymbol() != null && a.getSymbol().equalsIgnoreCase(symbol)
+                        && a.getAlertType() != null && a.getAlertType().equalsIgnoreCase(alertType)
+                        && a.getCreatedAt() != null && a.getCreatedAt().isAfter(threshold));
+        if (existsRecent) {
+            log.debug("AlertService: Bỏ qua tạo alert trùng lặp cho {} ({}) trong vòng 15 phút.", symbol, alertType);
+            return null;
+        }
+
         Alert alert = Alert.builder()
             .symbol(symbol.toUpperCase())
             .alertType(alertType)
