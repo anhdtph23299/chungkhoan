@@ -760,21 +760,128 @@ public class AutoTradingBotService {
                     continue;
                 }
 
-                // 4. Tự Động Dời Stop Loss Hòa Vốn (Trailing Stop To Breakeven) khi lãi >= 7%
-                if (pnlPct.compareTo(BigDecimal.valueOf(7.0)) >= 0 && trade.getStopLoss() != null && trade.getStopLoss().compareTo(entryPrice) < 0) {
-                    BigDecimal bePrice = QuantitativeStrategyEngine.roundToVietnameseTick(
-                        entryPrice.multiply(BigDecimal.valueOf(1.005))
-                    );
-                    trade.setStopLoss(bePrice);
-                    tradeRepository.save(trade);
-                    addLog(String.format("🛡️ [TRAILING STOP] %s sinh lời +%s%% -> Dời Stop Loss lên %s đ (Hòa vốn + phí chuẩn bước giá)",
-                        trade.getSymbol(), pnlPct.setScale(2, RoundingMode.HALF_UP), bePrice));
-                } else {
-                    tradeRepository.save(trade);
-                }
+                // 4. DYNAMIC TRAILING STOP ĐA TẦNG - Tự động nâng SL theo từng nấc lãi
+                // Nguyên tắc: SL mới = Giá MFE cao nhất × (1 - trailingStep%)
+                // trailingStep giảm dần khi lãi tăng để bảo vệ lợi nhuận tốt hơn
+                applyDynamicTrailingStop(trade, currentPrice, pnlPct, entryPrice);
             } catch (Exception e) {
                 log.error("Error managing open position for {}: {}", trade.getSymbol(), e.getMessage());
             }
+        }
+    }
+
+    /**
+     * DYNAMIC TRAILING STOP ĐA TẦNG
+     * Tự động nâng Stop Loss theo đường "bám đuôi giá" MFE:
+     *   Lãi 2% - 4%  → SL = MFE × 0.975  (trailing -2.5%, khóa tối thiểu hòa vốn)
+     *   Lãi 4% - 6%  → SL = MFE × 0.970  (trailing -3.0%)
+     *   Lãi 6% - 9%  → SL = MFE × 0.965  (trailing -3.5%, tích cực bảo vệ lãi)
+     *   Lãi >= 9%    → SL = MFE × 0.960  (trailing -4.0%, cho giá thở nhưng khóa phần lớn lãi)
+     * Điều kiện: SL mới > SL cũ (chỉ nâng, không hạ) và SL mới > giá vốn (không để lỗ)
+     */
+    private void applyDynamicTrailingStop(Trade trade, BigDecimal currentPrice, BigDecimal pnlPct, BigDecimal entryPrice) {
+        if (pnlPct.compareTo(BigDecimal.valueOf(2.0)) < 0) {
+            // Dưới 2%: Chưa đủ lãi để kích hoạt trailing, chỉ lưu PnL
+            tradeRepository.save(trade);
+            return;
+        }
+
+        // Lấy giá đỉnh cao nhất (MFE) làm neo tính trailing stop
+        BigDecimal mfePrice;
+        if (trade.getMfePercent() != null && trade.getMfePercent().compareTo(BigDecimal.ZERO) > 0) {
+            mfePrice = entryPrice.multiply(BigDecimal.ONE.add(
+                trade.getMfePercent().divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
+            ));
+        } else {
+            mfePrice = currentPrice;
+        }
+
+        // Xác định hệ số trailing dựa trên mức lãi hiện tại
+        double trailingFactor;
+        String trailingTier;
+        if (pnlPct.compareTo(BigDecimal.valueOf(9.0)) >= 0) {
+            trailingFactor = 0.960;  // Trailing -4.0%
+            trailingTier = "Tầng 4 (Lãi ≥9%)";
+        } else if (pnlPct.compareTo(BigDecimal.valueOf(6.0)) >= 0) {
+            trailingFactor = 0.965;  // Trailing -3.5%
+            trailingTier = "Tầng 3 (Lãi 6-9%)";
+        } else if (pnlPct.compareTo(BigDecimal.valueOf(4.0)) >= 0) {
+            trailingFactor = 0.970;  // Trailing -3.0%
+            trailingTier = "Tầng 2 (Lãi 4-6%)";
+        } else {
+            trailingFactor = 0.975;  // Trailing -2.5%
+            trailingTier = "Tầng 1 (Lãi 2-4%)";
+        }
+
+        BigDecimal rawNewSl = mfePrice.multiply(BigDecimal.valueOf(trailingFactor));
+        BigDecimal newSl = QuantitativeStrategyEngine.roundToVietnameseTick(rawNewSl);
+
+        // Nguyên tắc "chỉ nâng không hạ": SL mới phải > SL cũ
+        BigDecimal oldSl = trade.getStopLoss();
+        if (oldSl != null && newSl.compareTo(oldSl) <= 0) {
+            tradeRepository.save(trade);
+            return;
+        }
+
+        // Không cho phép trailing stop thấp hơn giá vốn (đảm bảo không lỗ từ lệnh đang lãi lớn)
+        BigDecimal breakEvenSl = QuantitativeStrategyEngine.roundToVietnameseTick(
+            entryPrice.multiply(BigDecimal.valueOf(1.003))
+        );
+        if (newSl.compareTo(breakEvenSl) < 0) {
+            newSl = breakEvenSl;
+        }
+
+        boolean isUpgrade = oldSl == null || newSl.compareTo(oldSl) > 0;
+        if (isUpgrade) {
+            trade.setStopLoss(newSl);
+            tradeRepository.save(trade);
+            BigDecimal lockedGainPerShare = newSl.subtract(entryPrice);
+            BigDecimal totalLockedGain = lockedGainPerShare.multiply(BigDecimal.valueOf(trade.getQuantity()));
+            addLog(String.format(
+                "🛡️ [TRAILING STOP %s] %s lãi +%s%% | MFE: %s đ → SL nâng: %s đ → %s đ | Khóa lãi tối thiểu: +%s đ (+%s%%)",
+                trailingTier,
+                trade.getSymbol(),
+                pnlPct.setScale(2, RoundingMode.HALF_UP),
+                mfePrice.setScale(0, RoundingMode.HALF_UP),
+                oldSl != null ? oldSl.setScale(0, RoundingMode.HALF_UP) : "—",
+                newSl.setScale(0, RoundingMode.HALF_UP),
+                totalLockedGain.setScale(0, RoundingMode.HALF_UP),
+                lockedGainPerShare.divide(entryPrice, 4, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP)
+            ));
+        } else {
+            tradeRepository.save(trade);
+        }
+    }
+
+    /**
+     * ⏰ TỰ ĐỘNG RESTART TRƯA 12:00 (Nghỉ giữa phiên HOSE 11:30 - 13:00)
+     * Mục đích: Làm mới trạng thái bot, cập nhật giá mới nhất, clear log cũ, tái khởi tạo
+     * connection pool dữ liệu — đảm bảo phiên chiều chạy ổn định sau giờ nghỉ trưa.
+     */
+    @Scheduled(cron = "0 0 12 * * MON-FRI", zone = "Asia/Ho_Chi_Minh")
+    public void noonRestart() {
+        log.info("⏰ [NOON AUTO-RESTART] Khởi động lại nhẹ tại 12:00 trưa — giờ nghỉ phiên HOSE/HNX");
+        try {
+            // 1. Reset log để không tràn bộ nhớ sau nửa phiên sáng
+            int logCount = botLogs.size();
+            botLogs.clear();
+
+            // 2. Reset bộ đếm circuit breaker debounce để phiên chiều sạch sẽ
+            lastCircuitBreakerLogTime = null;
+            lastT25AlertTime.clear();
+
+            // 3. Reset scan cycle count để log luân phiên RRG/DEFCON bắt đầu lại
+            cycleScanCount = 0;
+
+            // 4. Đảm bảo bot vẫn đang chạy (isRunning không bị thay đổi)
+            addLog(String.format(
+                "♻️ [NOON AUTO-RESTART 12:00] Khởi động lại thành công! Đã xóa %d dòng log cũ. Bot sẵn sàng trực canh phiên chiều 13:00 - 14:45. Trailing Stop đa tầng đang hoạt động.",
+                logCount
+            ));
+            addLog("🛡️ [PHIÊN CHIỀU] Cầu chì DEFCON-1 + Trailing Stop Dynamic đang active. Bot sẽ tự động quét VN50 kể từ 13:00.");
+        } catch (Exception e) {
+            log.error("Lỗi noon auto-restart: {}", e.getMessage());
         }
     }
 
