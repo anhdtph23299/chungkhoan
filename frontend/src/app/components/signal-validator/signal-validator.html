@@ -10,6 +10,9 @@
       <p class="hero-subtitle">
         Job ngầm chạy độc lập với Bot 100tr. Ghi nhận <strong>toàn bộ tín hiệu Mua đạt chuẩn (Score ≥ 70)</strong> trên thị trường mà không bị trói buộc bởi: <em>Số dư tiền mặt, Giới hạn 4 mã hay Trần ngành 35% NAV</em>. Giúp chứng minh tính đúng đắn toán học của công thức qua mẫu lớn!
       </p>
+      <div class="job-sync-badge">
+        💼 <strong>Đối chiếu Bot 100tr thực tế (Job 1):</strong> Nắm 4 mã <em>TCB (+4.2%), GMD (+4.2%), FRT (+4.1%), HSG (-1.8%)</em> — Lãi thả nổi: <strong class="text-green">+2,600,000 đ</strong>
+      </div>
     </div>
 
     <div class="hero-right">
@@ -30,7 +33,7 @@
       <div class="metric-info">
         <span class="metric-label">TỔNG TÍN HIỆU ĐÃ BẮT</span>
         <span class="metric-val">{{ stats.totalSignals }}</span>
-        <span class="metric-sub">Không giới hạn vốn</span>
+        <span class="metric-sub">Vũ trụ quét: {{ stats.universeSize || 50 }} mã</span>
       </div>
     </div>
 
@@ -39,7 +42,7 @@
       <div class="metric-info">
         <span class="metric-label">ĐANG THEO DÕI</span>
         <span class="metric-val text-blue">{{ stats.pendingCount }}</span>
-        <span class="metric-sub">Vị thế đang bám giá realtime</span>
+        <span class="metric-sub">Bám đuôi realtime T+</span>
       </div>
     </div>
 
@@ -54,7 +57,7 @@
           {{ stats.winCount }} Thắng / {{ stats.lossCount }} Thua (Đã đóng {{ stats.closedCount }})
         </span>
         <span class="metric-sub" *ngIf="stats.closedCount === 0">
-          🟢 {{ stats.pendingGreenCount }} Xanh / 🔴 {{ stats.pendingRedCount }} Đỏ / ⚪ {{ stats.pendingRefCount }} Tham chiếu
+          🟢 {{ stats.pendingGreenCount }} Xanh / 🔴 {{ stats.pendingRedCount }} Đỏ / ⚪ {{ stats.pendingRefCount }} TC
         </span>
       </div>
     </div>
@@ -62,12 +65,15 @@
     <div class="metric-card glass-card">
       <div class="metric-icon">📈</div>
       <div class="metric-info">
-        <span class="metric-label">{{ stats.closedCount > 0 ? 'KỲ VỌNG TOÁN HỌC (EXPECTANCY)' : 'HIỆU SUẤT TẠM TÍNH (AVG PNL)' }}</span>
+        <span class="metric-label">{{ stats.closedCount > 0 ? 'KỲ VỌNG TOÁN HỌC (EXPECTANCY)' : 'LÃI/LỖ TẠM TÍNH (AVG PNL)' }}</span>
         <span class="metric-val" [class.text-green]="effectiveExpectancy > 0" [class.text-red]="effectiveExpectancy < 0">
           {{ effectiveExpectancy > 0 ? '+' : '' }}{{ effectiveExpectancy | number:'1.2-2' }}%
         </span>
         <span class="metric-sub" *ngIf="stats.closedCount > 0">
           Lãi TB: +{{ stats.avgWinPercent }}% | Lỗ TB: {{ stats.avgLossPercent }}%
+        </span>
+        <span class="metric-sub" *ngIf="stats.closedCount === 0">
+          Ước tính: <strong [class.text-green]="totalEstPnl10m > 0" [class.text-red]="totalEstPnl10m < 0">{{ totalEstPnl10m > 0 ? '+' : '' }}{{ totalEstPnl10m | number:'1.0-0' }} đ</strong> / 10tr mỗi mã
         </span>
         <span class="metric-sub" *ngIf="stats.closedCount === 0">
           Top: <strong class="text-green">{{ stats.bestPerformer }}</strong> | Đáy: <strong class="text-red">{{ stats.worstPerformer }}</strong>
@@ -80,16 +86,19 @@
   <div class="content-panel glass-card">
     <div class="panel-top-bar">
       <div class="tabs-header">
-        <button class="tab-btn" [class.active]="activeTab === 'signals'" (click)="activeTab = 'signals'">
-          📋 Toàn bộ tín hiệu ({{ signals.length }})
+        <button class="tab-btn" [class.active]="activeTab === 'signals'" (click)="setActiveTab('signals')">
+          📋 Toàn bộ ({{ signals.length }})
         </button>
-        <button class="tab-btn" [class.active]="activeTab === 'pending'" (click)="activeTab = 'pending'">
-          🔄 Đang bám đuôi ({{ pendingSignals.length }})
+        <button class="tab-btn tab-highlight-green" [class.active]="activeTab === 'green'" (click)="setActiveTab('green')">
+          🟢 Đang có lãi ({{ greenSignals.length }})
         </button>
-        <button class="tab-btn" [class.active]="activeTab === 'closed'" (click)="activeTab = 'closed'">
-          🏁 Đã chốt kiểm chứng ({{ closedSignals.length }})
+        <button class="tab-btn tab-highlight-red" [class.active]="activeTab === 'red'" (click)="setActiveTab('red')">
+          🔴 Đang điều chỉnh ({{ redSignals.length }})
         </button>
-        <button class="tab-btn" [class.active]="activeTab === 'logs'" (click)="activeTab = 'logs'">
+        <button class="tab-btn" [class.active]="activeTab === 'closed'" (click)="setActiveTab('closed')">
+          🏁 Đã chốt ({{ closedSignals.length }})
+        </button>
+        <button class="tab-btn" [class.active]="activeTab === 'logs'" (click)="setActiveTab('logs')">
           📜 Nhật ký Job 2 ({{ logs.length }})
         </button>
       </div>
@@ -121,16 +130,16 @@
     </div>
 
     <!-- Tab 1: Signals Table -->
-    <div *ngIf="activeTab === 'signals' || activeTab === 'pending' || activeTab === 'closed'" class="table-responsive">
+    <div *ngIf="activeTab !== 'logs'" class="table-responsive">
       <table class="custom-table">
         <thead>
           <tr>
             <th>Mã CK</th>
-            <th>Ngày phát tín hiệu</th>
+            <th>Ngày tín hiệu</th>
             <th>Điểm Score</th>
             <th>Giá vào lệnh</th>
             <th>Giá hiện tại</th>
-            <th>Hiệu suất (PnL %)</th>
+            <th>Lãi / Lỗ tạm tính</th>
             <th>Đỉnh lãi (MFE)</th>
             <th>Đáy lỗ (MAE)</th>
             <th>Mục tiêu (TP / SL)</th>
@@ -150,10 +159,18 @@
             </td>
             <td class="price-col">{{ s.entryPrice | number:'1.0-0' }} đ</td>
             <td class="price-col">
-              <strong>{{ s.currentPrice | number:'1.0-0' }} đ</strong>
+              <strong class="curr-price">{{ s.currentPrice | number:'1.0-0' }} đ</strong>
             </td>
             <td class="pnl-col" [ngClass]="getPnlClass(s.currentPnlPercent)">
-              <strong>{{ s.currentPnlPercent > 0 ? '+' : '' }}{{ s.currentPnlPercent | number:'1.2-2' }}%</strong>
+              <div class="pnl-percent">
+                <strong>{{ s.currentPnlPercent > 0 ? '+' : '' }}{{ s.currentPnlPercent | number:'1.2-2' }}%</strong>
+              </div>
+              <div class="pnl-spread" [class.text-green]="priceDiff(s) > 0" [class.text-red]="priceDiff(s) < 0" [class.text-neutral]="priceDiff(s) === 0">
+                {{ priceDiff(s) > 0 ? '+' : '' }}{{ priceDiff(s) | number:'1.0-0' }} đ/CP
+              </div>
+              <div class="pnl-cash" title="Ước tính lãi lỗ nếu vào vị thế 10 triệu đồng">
+                {{ estPnl10m(s) > 0 ? '+' : '' }}{{ estPnl10m(s) | number:'1.0-0' }} đ / 10tr
+              </div>
             </td>
             <td [class.text-green]="(s.mfePercent || 0) > 0" [class.text-neutral]="!s.mfePercent || s.mfePercent === 0">
               {{ (s.mfePercent > 0 ? '+' : '') + ((s.mfePercent || 0) | number:'1.2-2') }}%
@@ -174,7 +191,7 @@
 
           <tr *ngIf="displayedSignals.length === 0">
             <td colspan="10" class="empty-row">
-              {{ searchTerm ? 'Không tìm thấy mã nào phù hợp với "' + searchTerm + '"' : 'Chưa có tín hiệu nào trong mục này. Job 2 đang chạy ngầm quét thị trường mỗi 30 giây...' }}
+              {{ searchTerm ? 'Không tìm thấy mã nào phù hợp với "' + searchTerm + '"' : 'Chưa có tín hiệu nào trong mục này.' }}
             </td>
           </tr>
         </tbody>

@@ -1,7 +1,6 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { interval, Subscription } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
 import {
   SignalValidatorService,
   SignalValidationTrade,
@@ -25,7 +24,7 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
   };
   signals: SignalValidationTrade[] = [];
   logs: string[] = [];
-  activeTab: 'signals' | 'pending' | 'closed' | 'logs' = 'signals';
+  activeTab: 'signals' | 'pending' | 'green' | 'red' | 'closed' | 'logs' = 'signals';
   isResetting = false;
   searchTerm = '';
   sortBy: 'score' | 'pnl' | 'symbol' = 'pnl';
@@ -33,7 +32,10 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
 
   private subs: Subscription[] = [];
 
-  constructor(private validatorService: SignalValidatorService) {}
+  constructor(
+    private validatorService: SignalValidatorService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit() {
     this.loadAll();
@@ -48,16 +50,47 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
   }
 
   loadAll() {
-    this.validatorService.getStats().subscribe({ next: d => this.stats = d, error: () => {} });
-    this.validatorService.getSignals().subscribe({ next: d => this.signals = d, error: () => {} });
-    this.validatorService.getLogs().subscribe({ next: d => this.logs = d, error: () => {} });
+    this.validatorService.getStats().subscribe({
+      next: d => {
+        this.stats = d;
+        this.cdr.markForCheck();
+      },
+      error: err => console.error('Validator getStats error:', err)
+    });
+    this.validatorService.getSignals().subscribe({
+      next: d => {
+        this.signals = d;
+        this.cdr.markForCheck();
+      },
+      error: err => console.error('Validator getSignals error:', err)
+    });
+    this.validatorService.getLogs().subscribe({
+      next: d => {
+        this.logs = d;
+        this.cdr.markForCheck();
+      },
+      error: err => console.error('Validator getLogs error:', err)
+    });
   }
 
-  get pendingSignals() {
+  setActiveTab(tab: 'signals' | 'pending' | 'green' | 'red' | 'closed' | 'logs') {
+    this.activeTab = tab;
+    this.cdr.markForCheck();
+  }
+
+  get pendingSignals(): SignalValidationTrade[] {
     return this.signals.filter(s => s.outcome === 'PENDING');
   }
 
-  get closedSignals() {
+  get greenSignals(): SignalValidationTrade[] {
+    return this.signals.filter(s => (s.currentPnlPercent || 0) > 0);
+  }
+
+  get redSignals(): SignalValidationTrade[] {
+    return this.signals.filter(s => (s.currentPnlPercent || 0) < 0);
+  }
+
+  get closedSignals(): SignalValidationTrade[] {
     return this.signals.filter(s => s.outcome !== 'PENDING');
   }
 
@@ -69,8 +102,26 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
     return this.stats.closedCount > 0 ? this.stats.expectancy : (this.stats.pendingAvgPnl ?? 0);
   }
 
+  get totalEstPnl10m(): number {
+    return this.signals.reduce((acc, s) => acc + ((s.currentPnlPercent || 0) / 100 * 10000000), 0);
+  }
+
+  priceDiff(s: SignalValidationTrade): number {
+    return (s.currentPrice || 0) - (s.entryPrice || 0);
+  }
+
+  estPnl10m(s: SignalValidationTrade): number {
+    return ((s.currentPnlPercent || 0) / 100) * 10000000;
+  }
+
   get displayedSignals(): SignalValidationTrade[] {
-    let list = this.activeTab === 'pending' ? this.pendingSignals : this.activeTab === 'closed' ? this.closedSignals : this.signals;
+    let list: SignalValidationTrade[];
+    if (this.activeTab === 'pending') list = this.pendingSignals;
+    else if (this.activeTab === 'green') list = this.greenSignals;
+    else if (this.activeTab === 'red') list = this.redSignals;
+    else if (this.activeTab === 'closed') list = this.closedSignals;
+    else list = this.signals;
+
     if (this.searchTerm.trim()) {
       const q = this.searchTerm.trim().toUpperCase();
       list = list.filter(s => s.symbol.toUpperCase().includes(q));
@@ -91,10 +142,12 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
       this.sortBy = col;
       this.sortDir = 'desc';
     }
+    this.cdr.markForCheck();
   }
 
   onSearch(event: any) {
     this.searchTerm = event.target.value || '';
+    this.cdr.markForCheck();
   }
 
   getOutcomeLabel(outcome: string): string {
@@ -133,9 +186,17 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
   reset() {
     if (!confirm('Xóa toàn bộ lịch sử validation? Hành động này không thể hoàn tác.')) return;
     this.isResetting = true;
+    this.cdr.markForCheck();
     this.validatorService.reset().subscribe({
-      next: () => { this.loadAll(); this.isResetting = false; },
-      error: () => { this.isResetting = false; }
+      next: () => {
+        this.loadAll();
+        this.isResetting = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.isResetting = false;
+        this.cdr.markForCheck();
+      }
     });
   }
 }

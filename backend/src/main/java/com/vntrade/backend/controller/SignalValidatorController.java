@@ -12,7 +12,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/validator")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "http://127.0.0.1:4200"})
 public class SignalValidatorController {
 
     private final SignalValidatorService validatorService;
