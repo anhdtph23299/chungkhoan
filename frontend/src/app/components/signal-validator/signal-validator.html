@@ -1,0 +1,153 @@
+<div class="validator-container">
+  <!-- Header Hero Panel -->
+  <div class="validator-hero glass-card">
+    <div class="hero-left">
+      <div class="badge-title">
+        <span class="ai-chip">JOB 2: MỞ TOANG CÁNH CỬA</span>
+        <span class="mode-pill">🔬 KIỂM CHỨNG CÔNG THỨC KHÔNG GIỚI HẠN VỐN</span>
+      </div>
+      <h1 class="hero-title">Đo Lường & Kiểm Chứng Tín Hiệu Định Lượng</h1>
+      <p class="hero-subtitle">
+        Job ngầm chạy độc lập với Bot 100tr. Ghi nhận <strong>toàn bộ tín hiệu Mua đạt chuẩn (Score ≥ 70)</strong> trên thị trường mà không bị trói buộc bởi: <em>Số dư tiền mặt, Giới hạn 4 mã hay Trần ngành 35% NAV</em>. Giúp chứng minh tính đúng đắn toán học của công thức qua mẫu lớn!
+      </p>
+    </div>
+
+    <div class="hero-right">
+      <div class="hero-actions">
+        <button class="btn btn-refresh" (click)="loadAll()">🔄 Cập nhật ngay</button>
+        <button class="btn btn-danger" (click)="reset()" [disabled]="isResetting">🗑️ Khởi tạo lại</button>
+      </div>
+      <div class="scan-time-badge">
+        Quét lần cuối: <span>{{ stats.lastScanTime || 'Đang quét...' }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Metrics Grid -->
+  <div class="metrics-grid">
+    <div class="metric-card glass-card">
+      <div class="metric-icon">🎯</div>
+      <div class="metric-info">
+        <span class="metric-label">TỔNG TÍN HIỆU ĐÃ BẮT</span>
+        <span class="metric-val">{{ stats.totalSignals }}</span>
+        <span class="metric-sub">Không giới hạn vốn</span>
+      </div>
+    </div>
+
+    <div class="metric-card glass-card">
+      <div class="metric-icon">🔄</div>
+      <div class="metric-info">
+        <span class="metric-label">ĐANG THEO DÕI</span>
+        <span class="metric-val text-blue">{{ stats.pendingCount }}</span>
+        <span class="metric-sub">Vị thế đang bám giá realtime</span>
+      </div>
+    </div>
+
+    <div class="metric-card glass-card">
+      <div class="metric-icon">🏆</div>
+      <div class="metric-info">
+        <span class="metric-label">TỶ LỆ THẮNG (WIN RATE)</span>
+        <span class="metric-val" [class.text-green]="stats.winRate >= 50" [class.text-red]="stats.winRate < 50 && stats.closedCount > 0">
+          {{ stats.winRate }}%
+        </span>
+        <span class="metric-sub">{{ stats.winCount }} Thắng / {{ stats.lossCount }} Thua (Đã đóng {{ stats.closedCount }})</span>
+      </div>
+    </div>
+
+    <div class="metric-card glass-card">
+      <div class="metric-icon">📈</div>
+      <div class="metric-info">
+        <span class="metric-label">KỲ VỌNG TOÁN HỌC (EXPECTANCY)</span>
+        <span class="metric-val" [class.text-green]="stats.expectancy > 0" [class.text-red]="stats.expectancy < 0">
+          {{ stats.expectancy > 0 ? '+' : '' }}{{ stats.expectancy }}%
+        </span>
+        <span class="metric-sub">Lãi TB: +{{ stats.avgWinPercent }}% | Lỗ TB: {{ stats.avgLossPercent }}%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Tabs -->
+  <div class="content-panel glass-card">
+    <div class="tabs-header">
+      <button class="tab-btn" [class.active]="activeTab === 'signals'" (click)="activeTab = 'signals'">
+        📋 Toàn bộ tín hiệu ({{ signals.length }})
+      </button>
+      <button class="tab-btn" [class.active]="activeTab === 'pending'" (click)="activeTab = 'pending'">
+        🔄 Đang bám đuôi ({{ pendingSignals.length }})
+      </button>
+      <button class="tab-btn" [class.active]="activeTab === 'closed'" (click)="activeTab = 'closed'">
+        🏁 Đã chốt kiểm chứng ({{ closedSignals.length }})
+      </button>
+      <button class="tab-btn" [class.active]="activeTab === 'logs'" (click)="activeTab = 'logs'">
+        📜 Nhật ký Job 2 ({{ logs.length }})
+      </button>
+    </div>
+
+    <!-- Tab 1: Signals Table -->
+    <div *ngIf="activeTab === 'signals' || activeTab === 'pending' || activeTab === 'closed'" class="table-responsive">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th>Mã CK</th>
+            <th>Ngày phát tín hiệu</th>
+            <th>Điểm Score</th>
+            <th>Giá vào lệnh</th>
+            <th>Giá hiện tại</th>
+            <th>Hiệu suất (PnL %)</th>
+            <th>Đỉnh lãi (MFE)</th>
+            <th>Đáy lỗ (MAE)</th>
+            <th>Mục tiêu (TP / SL)</th>
+            <th>Trạng thái kiểm chứng</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let s of (activeTab === 'pending' ? pendingSignals : activeTab === 'closed' ? closedSignals : signals)">
+            <td class="symbol-col">
+              <span class="sym-badge">{{ s.symbol }}</span>
+            </td>
+            <td>{{ s.signalDate }}</td>
+            <td>
+              <span class="score-badge" [ngClass]="getScoreClass(s.confidenceScore)">
+                {{ s.confidenceScore }}đ
+              </span>
+            </td>
+            <td class="price-col">{{ s.entryPrice | number:'1.0-0' }} đ</td>
+            <td class="price-col">
+              <strong>{{ s.currentPrice | number:'1.0-0' }} đ</strong>
+            </td>
+            <td class="pnl-col" [ngClass]="getPnlClass(s.currentPnlPercent)">
+              <strong>{{ s.currentPnlPercent > 0 ? '+' : '' }}{{ s.currentPnlPercent | number:'1.2-2' }}%</strong>
+            </td>
+            <td class="text-green">+{{ (s.mfePercent || 0) | number:'1.2-2' }}%</td>
+            <td class="text-red">{{ (s.maePercent || 0) | number:'1.2-2' }}%</td>
+            <td class="target-col">
+              <span class="tp-tag">TP: {{ s.takeProfit | number:'1.0-0' }}</span>
+              <span class="sl-tag">SL: {{ s.stopLoss | number:'1.0-0' }}</span>
+            </td>
+            <td>
+              <span class="outcome-pill" [ngClass]="getOutcomeClass(s.outcome)">
+                {{ getOutcomeLabel(s.outcome) }}
+              </span>
+            </td>
+          </tr>
+
+          <tr *ngIf="(activeTab === 'pending' ? pendingSignals : activeTab === 'closed' ? closedSignals : signals).length === 0">
+            <td colspan="10" class="empty-row">
+              Chưa có tín hiệu nào trong mục này. Job 2 đang chạy ngầm quét thị trường mỗi 30 giây...
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Tab 2: Logs Console -->
+    <div *ngIf="activeTab === 'logs'" class="logs-console">
+      <div *ngFor="let log of logs" class="log-line">
+        {{ log }}
+      </div>
+      <div *ngIf="logs.length === 0" class="empty-log">
+        Chưa có log từ Job 2. Job sẽ ghi nhận thông tin ngay khi phát hiện tín hiệu!
+      </div>
+    </div>
+  </div>
+</div>

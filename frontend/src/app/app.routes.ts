@@ -8,6 +8,7 @@ import { RiskComponent } from './components/risk/risk';
 import { ScheduleComponent } from './components/schedule/schedule';
 import { BotComponent } from './components/bot/bot';
 import { FuturesComponent } from './components/futures/futures';
+import { SignalValidatorComponent } from './components/signal-validator/signal-validator';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
@@ -19,6 +20,7 @@ export const routes: Routes = [
   { path: 'risk', component: RiskComponent },
   { path: 'schedule', component: ScheduleComponent },
   { path: 'bot', component: BotComponent },
+  { path: 'validator', component: SignalValidatorComponent },
   { path: 'futures', component: FuturesComponent },
   { path: '**', redirectTo: 'dashboard' }
 ];

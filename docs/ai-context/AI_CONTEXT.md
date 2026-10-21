@@ -138,6 +138,7 @@ c:\stock\
 | Circuit Breaker Debounce 15' | `AutoTradingBotService.java` | ✅ Live |
 | Portfolio History Snapshot | `PortfolioHistoryService.java` | ✅ Live |
 | 6 Shadow Mode Filters | `AutoTradingBotService.java` (CANSLIM, MTF, RRG, OBI, Spoofing, Kalman) | ✅ Shadow Only |
+| Job 2: Signal Validator (Mở Toang Cánh Cửa) | `SignalValidatorService.java`, `SignalValidatorController.java` | ✅ Live (21/10) |
 
 ---
 
