@@ -46,41 +46,78 @@
     <div class="metric-card glass-card">
       <div class="metric-icon">🏆</div>
       <div class="metric-info">
-        <span class="metric-label">TỶ LỆ THẮNG (WIN RATE)</span>
-        <span class="metric-val" [class.text-green]="stats.winRate >= 50" [class.text-red]="stats.winRate < 50 && stats.closedCount > 0">
-          {{ stats.winRate }}%
+        <span class="metric-label">{{ stats.closedCount > 0 ? 'TỶ LỆ THẮNG (WIN RATE)' : 'TỶ LỆ TẠM LÃI (REALTIME)' }}</span>
+        <span class="metric-val" [class.text-green]="effectiveWinRate >= 50" [class.text-red]="effectiveWinRate < 50">
+          {{ effectiveWinRate }}%
         </span>
-        <span class="metric-sub">{{ stats.winCount }} Thắng / {{ stats.lossCount }} Thua (Đã đóng {{ stats.closedCount }})</span>
+        <span class="metric-sub" *ngIf="stats.closedCount > 0">
+          {{ stats.winCount }} Thắng / {{ stats.lossCount }} Thua (Đã đóng {{ stats.closedCount }})
+        </span>
+        <span class="metric-sub" *ngIf="stats.closedCount === 0">
+          🟢 {{ stats.pendingGreenCount }} Xanh / 🔴 {{ stats.pendingRedCount }} Đỏ / ⚪ {{ stats.pendingRefCount }} Tham chiếu
+        </span>
       </div>
     </div>
 
     <div class="metric-card glass-card">
       <div class="metric-icon">📈</div>
       <div class="metric-info">
-        <span class="metric-label">KỲ VỌNG TOÁN HỌC (EXPECTANCY)</span>
-        <span class="metric-val" [class.text-green]="stats.expectancy > 0" [class.text-red]="stats.expectancy < 0">
-          {{ stats.expectancy > 0 ? '+' : '' }}{{ stats.expectancy }}%
+        <span class="metric-label">{{ stats.closedCount > 0 ? 'KỲ VỌNG TOÁN HỌC (EXPECTANCY)' : 'HIỆU SUẤT TẠM TÍNH (AVG PNL)' }}</span>
+        <span class="metric-val" [class.text-green]="effectiveExpectancy > 0" [class.text-red]="effectiveExpectancy < 0">
+          {{ effectiveExpectancy > 0 ? '+' : '' }}{{ effectiveExpectancy | number:'1.2-2' }}%
         </span>
-        <span class="metric-sub">Lãi TB: +{{ stats.avgWinPercent }}% | Lỗ TB: {{ stats.avgLossPercent }}%</span>
+        <span class="metric-sub" *ngIf="stats.closedCount > 0">
+          Lãi TB: +{{ stats.avgWinPercent }}% | Lỗ TB: {{ stats.avgLossPercent }}%
+        </span>
+        <span class="metric-sub" *ngIf="stats.closedCount === 0">
+          Top: <strong class="text-green">{{ stats.bestPerformer }}</strong> | Đáy: <strong class="text-red">{{ stats.worstPerformer }}</strong>
+        </span>
       </div>
     </div>
   </div>
 
   <!-- Main Content Tabs -->
   <div class="content-panel glass-card">
-    <div class="tabs-header">
-      <button class="tab-btn" [class.active]="activeTab === 'signals'" (click)="activeTab = 'signals'">
-        📋 Toàn bộ tín hiệu ({{ signals.length }})
-      </button>
-      <button class="tab-btn" [class.active]="activeTab === 'pending'" (click)="activeTab = 'pending'">
-        🔄 Đang bám đuôi ({{ pendingSignals.length }})
-      </button>
-      <button class="tab-btn" [class.active]="activeTab === 'closed'" (click)="activeTab = 'closed'">
-        🏁 Đã chốt kiểm chứng ({{ closedSignals.length }})
-      </button>
-      <button class="tab-btn" [class.active]="activeTab === 'logs'" (click)="activeTab = 'logs'">
-        📜 Nhật ký Job 2 ({{ logs.length }})
-      </button>
+    <div class="panel-top-bar">
+      <div class="tabs-header">
+        <button class="tab-btn" [class.active]="activeTab === 'signals'" (click)="activeTab = 'signals'">
+          📋 Toàn bộ tín hiệu ({{ signals.length }})
+        </button>
+        <button class="tab-btn" [class.active]="activeTab === 'pending'" (click)="activeTab = 'pending'">
+          🔄 Đang bám đuôi ({{ pendingSignals.length }})
+        </button>
+        <button class="tab-btn" [class.active]="activeTab === 'closed'" (click)="activeTab = 'closed'">
+          🏁 Đã chốt kiểm chứng ({{ closedSignals.length }})
+        </button>
+        <button class="tab-btn" [class.active]="activeTab === 'logs'" (click)="activeTab = 'logs'">
+          📜 Nhật ký Job 2 ({{ logs.length }})
+        </button>
+      </div>
+
+      <!-- Quick Search & Sort Filter -->
+      <div class="table-controls" *ngIf="activeTab !== 'logs'">
+        <div class="search-box">
+          <input
+            type="text"
+            placeholder="🔍 Tìm mã CK (ví dụ: TPB, SSI, FRT...)"
+            [value]="searchTerm"
+            (input)="onSearch($event)"
+            class="search-input"
+          />
+        </div>
+        <div class="sort-buttons">
+          <span class="sort-label">Xếp theo:</span>
+          <button class="btn-sort" [class.active]="sortBy === 'pnl'" (click)="setSort('pnl')">
+            PnL % {{ sortBy === 'pnl' ? (sortDir === 'desc' ? '▼' : '▲') : '' }}
+          </button>
+          <button class="btn-sort" [class.active]="sortBy === 'score'" (click)="setSort('score')">
+            Điểm Score {{ sortBy === 'score' ? (sortDir === 'desc' ? '▼' : '▲') : '' }}
+          </button>
+          <button class="btn-sort" [class.active]="sortBy === 'symbol'" (click)="setSort('symbol')">
+            Mã CK {{ sortBy === 'symbol' ? (sortDir === 'desc' ? '▼' : '▲') : '' }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Tab 1: Signals Table -->
@@ -101,7 +138,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let s of (activeTab === 'pending' ? pendingSignals : activeTab === 'closed' ? closedSignals : signals)">
+          <tr *ngFor="let s of displayedSignals">
             <td class="symbol-col">
               <span class="sym-badge">{{ s.symbol }}</span>
             </td>
@@ -118,8 +155,12 @@
             <td class="pnl-col" [ngClass]="getPnlClass(s.currentPnlPercent)">
               <strong>{{ s.currentPnlPercent > 0 ? '+' : '' }}{{ s.currentPnlPercent | number:'1.2-2' }}%</strong>
             </td>
-            <td class="text-green">+{{ (s.mfePercent || 0) | number:'1.2-2' }}%</td>
-            <td class="text-red">{{ (s.maePercent || 0) | number:'1.2-2' }}%</td>
+            <td [class.text-green]="(s.mfePercent || 0) > 0" [class.text-neutral]="!s.mfePercent || s.mfePercent === 0">
+              {{ (s.mfePercent > 0 ? '+' : '') + ((s.mfePercent || 0) | number:'1.2-2') }}%
+            </td>
+            <td [class.text-red]="(s.maePercent || 0) < 0" [class.text-neutral]="!s.maePercent || s.maePercent === 0">
+              {{ ((s.maePercent || 0) | number:'1.2-2') }}%
+            </td>
             <td class="target-col">
               <span class="tp-tag">TP: {{ s.takeProfit | number:'1.0-0' }}</span>
               <span class="sl-tag">SL: {{ s.stopLoss | number:'1.0-0' }}</span>
@@ -131,9 +172,9 @@
             </td>
           </tr>
 
-          <tr *ngIf="(activeTab === 'pending' ? pendingSignals : activeTab === 'closed' ? closedSignals : signals).length === 0">
+          <tr *ngIf="displayedSignals.length === 0">
             <td colspan="10" class="empty-row">
-              Chưa có tín hiệu nào trong mục này. Job 2 đang chạy ngầm quét thị trường mỗi 30 giây...
+              {{ searchTerm ? 'Không tìm thấy mã nào phù hợp với "' + searchTerm + '"' : 'Chưa có tín hiệu nào trong mục này. Job 2 đang chạy ngầm quét thị trường mỗi 30 giây...' }}
             </td>
           </tr>
         </tbody>

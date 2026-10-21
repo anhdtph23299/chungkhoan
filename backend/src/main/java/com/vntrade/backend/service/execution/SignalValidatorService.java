@@ -221,6 +221,7 @@ public class SignalValidatorService {
         List<SignalValidationTrade> closed = all.stream().filter(t -> !"PENDING".equals(t.getOutcome())).toList();
         List<SignalValidationTrade> pending = all.stream().filter(t -> "PENDING".equals(t.getOutcome())).toList();
 
+        // Thống kê các lệnh đã đóng (Closed outcomes)
         long winCount = closed.stream().filter(t -> "WIN".equals(t.getOutcome()) || (t.getCurrentPnlPercent() != null && t.getCurrentPnlPercent().compareTo(BigDecimal.ZERO) > 0)).count();
         long lossCount = closed.size() - winCount;
 
@@ -247,6 +248,41 @@ public class SignalValidatorService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .divide(BigDecimal.valueOf(lossCount), 2, RoundingMode.HALF_UP);
 
+        // Thống kê các lệnh đang bám đuôi realtime (Realtime Pending Metrics)
+        long pendingGreen = pending.stream().filter(t -> t.getCurrentPnlPercent() != null && t.getCurrentPnlPercent().compareTo(BigDecimal.ZERO) > 0).count();
+        long pendingRed = pending.stream().filter(t -> t.getCurrentPnlPercent() != null && t.getCurrentPnlPercent().compareTo(BigDecimal.ZERO) < 0).count();
+        long pendingRef = pending.size() - pendingGreen - pendingRed;
+
+        BigDecimal pendingWinRate = pending.isEmpty() ? BigDecimal.ZERO :
+            BigDecimal.valueOf(pendingGreen * 100.0 / pending.size()).setScale(1, RoundingMode.HALF_UP);
+
+        BigDecimal pendingSumPnl = pending.stream()
+            .map(t -> t.getCurrentPnlPercent() != null ? t.getCurrentPnlPercent() : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal pendingAvgPnl = pending.isEmpty() ? BigDecimal.ZERO :
+            pendingSumPnl.divide(BigDecimal.valueOf(pending.size()), 2, RoundingMode.HALF_UP);
+
+        // Tìm mã tăng mạnh nhất và giảm nhiều nhất trong các mã đang bám đuôi
+        String bestPerformer = "—";
+        String worstPerformer = "—";
+        if (!pending.isEmpty()) {
+            var best = pending.stream()
+                .filter(t -> t.getCurrentPnlPercent() != null)
+                .max(Comparator.comparing(SignalValidationTrade::getCurrentPnlPercent))
+                .orElse(null);
+            if (best != null && best.getCurrentPnlPercent() != null) {
+                bestPerformer = String.format("%s (+%s%%)", best.getSymbol(), best.getCurrentPnlPercent().setScale(2, RoundingMode.HALF_UP));
+            }
+
+            var worst = pending.stream()
+                .filter(t -> t.getCurrentPnlPercent() != null)
+                .min(Comparator.comparing(SignalValidationTrade::getCurrentPnlPercent))
+                .orElse(null);
+            if (worst != null && worst.getCurrentPnlPercent() != null) {
+                worstPerformer = String.format("%s (%s%%)", worst.getSymbol(), worst.getCurrentPnlPercent().setScale(2, RoundingMode.HALF_UP));
+            }
+        }
+
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("totalSignals", all.size());
         res.put("pendingCount", pending.size());
@@ -257,6 +293,16 @@ public class SignalValidatorService {
         res.put("expectancy", expectancy);
         res.put("avgWinPercent", avgWin);
         res.put("avgLossPercent", avgLoss);
+
+        // Realtime stats
+        res.put("pendingGreenCount", pendingGreen);
+        res.put("pendingRedCount", pendingRed);
+        res.put("pendingRefCount", pendingRef);
+        res.put("pendingWinRate", pendingWinRate);
+        res.put("pendingAvgPnl", pendingAvgPnl);
+        res.put("bestPerformer", bestPerformer);
+        res.put("worstPerformer", worstPerformer);
+
         res.put("universeSize", VALIDATION_SYMBOLS.size());
         res.put("lastScanTime", LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss dd/MM/yyyy")));
         return res;

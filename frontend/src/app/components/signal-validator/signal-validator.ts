@@ -19,12 +19,17 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
   stats: ValidatorStats = {
     totalSignals: 0, pendingCount: 0, closedCount: 0,
     winCount: 0, lossCount: 0, winRate: 0, expectancy: 0,
-    avgWinPercent: 0, avgLossPercent: 0, universeSize: 0, lastScanTime: ''
+    avgWinPercent: 0, avgLossPercent: 0, universeSize: 0, lastScanTime: '',
+    pendingGreenCount: 0, pendingRedCount: 0, pendingRefCount: 0,
+    pendingWinRate: 0, pendingAvgPnl: 0, bestPerformer: '—', worstPerformer: '—'
   };
   signals: SignalValidationTrade[] = [];
   logs: string[] = [];
   activeTab: 'signals' | 'pending' | 'closed' | 'logs' = 'signals';
   isResetting = false;
+  searchTerm = '';
+  sortBy: 'score' | 'pnl' | 'symbol' = 'pnl';
+  sortDir: 'asc' | 'desc' = 'desc';
 
   private subs: Subscription[] = [];
 
@@ -56,6 +61,42 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
     return this.signals.filter(s => s.outcome !== 'PENDING');
   }
 
+  get effectiveWinRate(): number {
+    return this.stats.closedCount > 0 ? this.stats.winRate : (this.stats.pendingWinRate ?? 0);
+  }
+
+  get effectiveExpectancy(): number {
+    return this.stats.closedCount > 0 ? this.stats.expectancy : (this.stats.pendingAvgPnl ?? 0);
+  }
+
+  get displayedSignals(): SignalValidationTrade[] {
+    let list = this.activeTab === 'pending' ? this.pendingSignals : this.activeTab === 'closed' ? this.closedSignals : this.signals;
+    if (this.searchTerm.trim()) {
+      const q = this.searchTerm.trim().toUpperCase();
+      list = list.filter(s => s.symbol.toUpperCase().includes(q));
+    }
+    return [...list].sort((a, b) => {
+      let cmp = 0;
+      if (this.sortBy === 'score') cmp = (b.confidenceScore || 0) - (a.confidenceScore || 0);
+      else if (this.sortBy === 'pnl') cmp = (b.currentPnlPercent || 0) - (a.currentPnlPercent || 0);
+      else if (this.sortBy === 'symbol') cmp = a.symbol.localeCompare(b.symbol);
+      return this.sortDir === 'desc' ? cmp : -cmp;
+    });
+  }
+
+  setSort(col: 'score' | 'pnl' | 'symbol') {
+    if (this.sortBy === col) {
+      this.sortDir = this.sortDir === 'desc' ? 'asc' : 'desc';
+    } else {
+      this.sortBy = col;
+      this.sortDir = 'desc';
+    }
+  }
+
+  onSearch(event: any) {
+    this.searchTerm = event.target.value || '';
+  }
+
   getOutcomeLabel(outcome: string): string {
     switch (outcome) {
       case 'WIN': return '✅ WIN';
@@ -79,7 +120,7 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
   }
 
   getPnlClass(pnl: number): string {
-    if (!pnl) return '';
+    if (pnl === null || pnl === undefined || pnl === 0) return 'pnl-zero';
     return pnl > 0 ? 'pnl-positive' : 'pnl-negative';
   }
 

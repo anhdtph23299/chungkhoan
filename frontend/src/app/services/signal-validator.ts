@@ -32,6 +32,14 @@ export interface ValidatorStats {
   avgLossPercent: number;
   universeSize: number;
   lastScanTime: string;
+  // Realtime pending metrics
+  pendingGreenCount: number;
+  pendingRedCount: number;
+  pendingRefCount: number;
+  pendingWinRate: number;
+  pendingAvgPnl: number;
+  bestPerformer: string;
+  worstPerformer: string;
 }
 
 @Injectable({ providedIn: 'root' })
