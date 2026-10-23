@@ -65,4 +65,28 @@ export class AnalysisService {
   getCanslimForSymbol(symbol: string): Observable<any> {
     return this.http.get<any>(`${this.baseUrl}/canslim/${symbol}`);
   }
+
+  getStatisticalArbitragePairs(): Observable<StatisticalArbitragePair[]> {
+    return this.http.get<StatisticalArbitragePair[]>(`${this.baseUrl}/statistical-arbitrage/pairs`);
+  }
+}
+
+export interface StatisticalArbitragePair {
+  pairName: string;
+  stockA: string;
+  stockB: string;
+  sector: string;
+  stockAPrice: number;
+  stockBPrice: number;
+  hedgeRatioBeta: number;
+  cointegrationAdfPValue: number;
+  currentSpread: number;
+  spreadMean: number;
+  spreadStdDev: number;
+  spreadZScore: number;
+  halfLifeDays: number;
+  arbitrageSignal: string;
+  expectedNetEdgePercent: number;
+  t25RotationFeasible: boolean;
+  institutionalPairVerdict: string;
 }

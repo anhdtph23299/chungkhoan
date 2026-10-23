@@ -17,6 +17,10 @@
       <span>🌀</span> Mẫu Hình Co Hẹp Biến Độ VCP (Mark Minervini)
       <span class="pill pill-purple" style="font-size: 0.72rem; padding: 2px 6px;">{{ vcpPatterns.length }} Setup</span>
     </button>
+    <button class="subtab-btn" [class.active]="activeSubtab === 'statarb'" (click)="setSubtab('statarb')">
+      <span>⚖️</span> Statistical Arbitrage (Pairs Trading)
+      <span class="pill pill-blue" style="font-size: 0.72rem; padding: 2px 6px;">{{ statArbPairs.length }} Cặp Cointegration</span>
+    </button>
   </div>
 
   <!-- SUBTAB 1: TRADINGVIEW CHART & SCANNER -->
@@ -200,6 +204,86 @@
           </button>
         </div>
       </div>
+    </div>
+  </ng-container>
+
+  <!-- SUBTAB 3: STATISTICAL ARBITRAGE & PAIRS TRADING -->
+  <ng-container *ngIf="activeSubtab === 'statarb'">
+    <!-- Top StatArb Banner -->
+    <div class="glass-card statarb-banner">
+      <div>
+        <div class="statarb-banner-title">
+          <span>⚖️</span>
+          <span>MÔ HÌNH HỒI QUY ĐỒNG LIÊN KẾT (ENGLE-GRANGER) & MEAN-REVERSION (ORNSTEIN-UHLENBECK)</span>
+        </div>
+        <p class="statarb-banner-sub">
+          Tối ưu hóa kinh doanh chênh lệch giá cặp cổ phiếu cùng ngành, giải quyết rủi ro chu kỳ T+2.5 trên TTCK Việt Nam
+        </p>
+      </div>
+      <button class="btn btn-sm btn-outline" (click)="loadStatArb()">
+        🔄 Quét Lại Dữ Liệu
+      </button>
+    </div>
+
+    <!-- StatArb Grid -->
+    <div class="statarb-grid" *ngIf="statArbPairs.length > 0">
+      <div class="glass-card statarb-card" *ngFor="let p of statArbPairs">
+        <div class="statarb-head">
+          <div>
+            <div class="statarb-pair-name">{{ p.pairName }}</div>
+            <div class="statarb-sector">{{ p.sector }}</div>
+          </div>
+          <span class="pill" [ngClass]="p.arbitrageSignal.includes('BUY') ? 'pill-up' : (p.arbitrageSignal.includes('TAKE_PROFIT') ? 'pill-primary' : 'pill-gray')">
+            {{ p.arbitrageSignal }}
+          </span>
+        </div>
+
+        <div class="statarb-stats-grid">
+          <div class="statarb-stat">
+            <span class="stat-l">Giá {{ p.stockA }}:</span>
+            <span class="stat-v font-mono">{{ p.stockAPrice | number }} đ</span>
+          </div>
+          <div class="statarb-stat">
+            <span class="stat-l">Giá {{ p.stockB }}:</span>
+            <span class="stat-v font-mono">{{ p.stockBPrice | number }} đ</span>
+          </div>
+          <div class="statarb-stat">
+            <span class="stat-l">Hedge Ratio (Beta):</span>
+            <span class="stat-v font-mono text-main">{{ p.hedgeRatioBeta | number:'1.2-2' }}</span>
+          </div>
+          <div class="statarb-stat">
+            <span class="stat-l">Spread Z-Score:</span>
+            <span class="stat-v font-mono" [ngClass]="p.spreadZScore <= -1.5 ? 'stock-up' : (p.spreadZScore >= 1.5 ? 'stock-down' : 'text-main')">
+              {{ p.spreadZScore | number:'1.2-2' }}σ
+            </span>
+          </div>
+          <div class="statarb-stat">
+            <span class="stat-l">Half-Life (Thời gian hội tụ):</span>
+            <span class="stat-v font-mono">{{ p.halfLifeDays | number:'1.1-1' }} ngày</span>
+          </div>
+          <div class="statarb-stat">
+            <span class="stat-l">Lợi thế kỳ vọng (Net Edge):</span>
+            <span class="stat-v font-mono stock-up">+{{ p.expectedNetEdgePercent | number:'1.1-1' }}%</span>
+          </div>
+        </div>
+
+        <div class="statarb-verdict">
+          {{ p.institutionalPairVerdict }}
+        </div>
+
+        <div class="vcp-actions">
+          <button class="btn btn-outline flex-1" (click)="selectSymbol(p.stockA); setSubtab('scanner')">
+            👁️ Soi {{ p.stockA }}
+          </button>
+          <button class="btn btn-outline flex-1" (click)="selectSymbol(p.stockB); setSubtab('scanner')">
+            👁️ Soi {{ p.stockB }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card text-center py-5" *ngIf="isLoadingStatArb">
+      <span class="text-secondary">Đang tính toán ma trận đồng liên kết và chu kỳ Ornstein-Uhlenbeck 60 phiên...</span>
     </div>
   </ng-container>
 </div>

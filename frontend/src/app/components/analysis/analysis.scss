@@ -487,3 +487,104 @@
   gap: 10px;
   margin-top: 4px;
 }
+
+/* Statistical Arbitrage Styles */
+.statarb-banner {
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, rgba(6, 182, 212, 0.06) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.statarb-banner-title {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #818cf8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statarb-banner-sub {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.statarb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.statarb-card {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+
+  &:hover {
+    border-color: rgba(99, 102, 241, 0.4);
+    transform: translateY(-2px);
+  }
+}
+
+.statarb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.statarb-pair-name {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.statarb-sector {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.statarb-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.statarb-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  .stat-l {
+    font-size: 0.72rem;
+    color: #94a3b8;
+  }
+
+  .stat-v {
+    font-size: 0.95rem;
+    font-weight: 700;
+  }
+}
+
+.statarb-verdict {
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border-left: 3px solid #6366f1;
+  line-height: 1.45;
+}

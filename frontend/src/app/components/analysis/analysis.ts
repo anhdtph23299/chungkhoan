@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { TradeService, Trade } from '../../services/trade';
-import { AnalysisService, BackendStockScanResult, VcpPattern } from '../../services/analysis';
+import { AnalysisService, BackendStockScanResult, VcpPattern, StatisticalArbitragePair } from '../../services/analysis';
 
 export interface TechnicalScanItem {
   symbol: string;
@@ -34,11 +34,13 @@ export interface TechnicalScanItem {
 export class AnalysisComponent implements OnInit {
   selectedSymbol = 'FPT';
   activeFilter = 'ALL';
-  activeSubtab: 'scanner' | 'vcp' = 'scanner';
+  activeSubtab: 'scanner' | 'vcp' | 'statarb' = 'scanner';
   isLoadingScan = false;
   isLoadingVcp = false;
+  isLoadingStatArb = false;
 
   vcpPatterns: VcpPattern[] = [];
+  statArbPairs: StatisticalArbitragePair[] = [];
 
   scannedStocks: TechnicalScanItem[] = [
     {
@@ -159,6 +161,7 @@ export class AnalysisComponent implements OnInit {
     this.filterSignals('ALL');
     this.loadRealAnalysisScan();
     this.loadVcpPatterns();
+    this.loadStatArb();
   }
 
   loadRealAnalysisScan(): void {
@@ -225,8 +228,26 @@ export class AnalysisComponent implements OnInit {
     });
   }
 
-  setSubtab(tab: 'scanner' | 'vcp'): void {
+  loadStatArb(): void {
+    this.isLoadingStatArb = true;
+    this.analysisService.getStatisticalArbitragePairs().subscribe({
+      next: (pairs) => {
+        this.statArbPairs = pairs || [];
+        this.isLoadingStatArb = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.isLoadingStatArb = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  setSubtab(tab: 'scanner' | 'vcp' | 'statarb'): void {
     this.activeSubtab = tab;
+    if (tab === 'statarb' && this.statArbPairs.length === 0) {
+      this.loadStatArb();
+    }
     this.cdr.markForCheck();
   }
 
