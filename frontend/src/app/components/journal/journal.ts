@@ -62,12 +62,14 @@ export class JournalComponent implements OnInit {
           this.entries = closed.map(t => this.mapTradeToJournal(t));
           this.applyFilter();
         } else {
-          this.initMockJournal();
+          this.entries = [];
+          this.applyFilter();
         }
         this.cdr.markForCheck();
       },
       error: () => {
-        this.initMockJournal();
+        this.entries = [];
+        this.applyFilter();
         this.cdr.markForCheck();
       }
     });

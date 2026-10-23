@@ -170,4 +170,8 @@ public class BotDecisionAuditService {
             "recentAudits", recent
         );
     }
+
+    public void clearAllAudits() {
+        auditRepository.deleteAll();
+    }
 }

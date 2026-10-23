@@ -112,6 +112,12 @@ public class TradeController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/all")
+    public ResponseEntity<java.util.Map<String, Object>> deleteAllTrades() {
+        tradeService.deleteAllTrades();
+        return ResponseEntity.ok(java.util.Map.of("status", "SUCCESS", "message", "Đã xóa toàn bộ lịch sử giao dịch"));
+    }
+
     @GetMapping("/summary")
     public PortfolioSummary getPortfolioSummary() {
         return tradeService.getPortfolioSummary();

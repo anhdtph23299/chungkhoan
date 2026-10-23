@@ -108,12 +108,24 @@ export class PortfolioComponent implements OnInit {
             winRate
           };
         } else {
-          this.initMockPortfolio();
+          this.openPositions = [];
+          this.closedPositions = [];
+          this.summary = {
+            totalInvested: 0,
+            currentValue: 0,
+            totalPnl: 0,
+            totalPnlPercent: 0,
+            openPositions: 0,
+            totalTrades: 0,
+            winningTrades: 0,
+            winRate: 0
+          };
         }
         this.cdr.markForCheck();
       },
       error: () => {
-        this.initMockPortfolio();
+        this.openPositions = [];
+        this.closedPositions = [];
         this.cdr.markForCheck();
       }
     });

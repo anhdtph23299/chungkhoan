@@ -231,4 +231,9 @@ public class TradeService {
         trade.setPnl(netPnl);
         trade.setPnlPercent(pnlPct);
     }
+
+    @Transactional
+    public void deleteAllTrades() {
+        tradeRepository.deleteAll();
+    }
 }

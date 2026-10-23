@@ -24,6 +24,9 @@ public class BotController {
     private final com.vntrade.backend.service.decision.VN30SignalScreenerService vn30SignalScreenerService;
     private final com.vntrade.backend.service.execution.BotConfigService botConfigService;
     private final com.vntrade.backend.service.execution.BotDecisionAuditService auditService;
+    private final com.vntrade.backend.service.execution.SignalValidatorService validatorService;
+    private final com.vntrade.backend.service.portfolio.PortfolioHistoryService portfolioHistoryService;
+    private final com.vntrade.backend.service.futures.VN30FuturesTradingService futuresTradingService;
 
     @GetMapping("/audit-summary")
     public ResponseEntity<Map<String, Object>> getAuditSummary() {
@@ -135,6 +138,29 @@ public class BotController {
             "dailyTarget", botService.getDailyProfitTarget(),
             "circuitBreaker", botService.getDailyMaxLossLimit(),
             "message", "Đã cập nhật số vốn thành công!"
+        ));
+    }
+
+    @PostMapping("/reset-all")
+    public ResponseEntity<Map<String, Object>> resetAll(
+            @RequestParam(required = false, defaultValue = "100000000") BigDecimal capital) {
+        botService.resetAllAndStartFresh(capital);
+        validatorService.resetAll();
+        auditService.clearAllAudits();
+        try {
+            futuresTradingService.resetAll();
+        } catch (Exception ignored) {}
+        try {
+            portfolioHistoryService.resetAndReseedSnapshots();
+        } catch (Exception ignored) {}
+        return ResponseEntity.ok(Map.of(
+            "status", "RESET_COMPLETE",
+            "capital", botService.getAccountCapital(),
+            "availableCash", botService.getAvailableCash(),
+            "currentNav", botService.getCurrentNav(),
+            "todayRealizedPnl", botService.getTodayRealizedPnl(),
+            "todayTradesCount", botService.getTodayTradesCount(),
+            "message", "Đã xóa toàn bộ dữ liệu giao dịch cũ. Khởi tạo vốn mới: 100,000,000 đ (100% Tiền mặt). Sẵn sàng bắt đầu chu kỳ mới từ đầu tuần tới!"
         ));
     }
 

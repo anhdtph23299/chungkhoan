@@ -314,4 +314,14 @@ public class VN30FuturesTradingService {
         if (botLogs.size() > 50) botLogs.remove(botLogs.size() - 1);
         log.info("FuturesBot: {}", message);
     }
+
+    public void resetAll() {
+        openPositions.clear();
+        positionHistory.clear();
+        todayRealizedPnlVnd = BigDecimal.ZERO;
+        todayPnlPoints = BigDecimal.ZERO;
+        todayTradesCount = 0;
+        botLogs.clear();
+        addLog("🔄 [RESET PHÁI SINH HOÀN TẤT] Vốn phái sinh 100,000,000 đ, 0 vị thế mở. Sẵn sàng cho tuần mới!");
+    }
 }

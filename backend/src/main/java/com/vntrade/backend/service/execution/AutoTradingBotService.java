@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -153,6 +154,28 @@ public class AutoTradingBotService {
             this.dailyProfitTarget = capital.multiply(BigDecimal.valueOf(0.015)).setScale(0, RoundingMode.HALF_UP);
             this.dailyMaxLossLimit = capital.multiply(BigDecimal.valueOf(0.020)).setScale(0, RoundingMode.HALF_UP);
         }
+    }
+
+    @Transactional
+    public void resetAllAndStartFresh(BigDecimal capital) {
+        tradeRepository.deleteAll();
+        if (capital != null && capital.compareTo(BigDecimal.ZERO) > 0) {
+            this.accountCapital = capital;
+        } else {
+            this.accountCapital = BigDecimal.valueOf(100_000_000);
+        }
+        this.dailyProfitTarget = this.accountCapital.multiply(BigDecimal.valueOf(0.015)).setScale(0, RoundingMode.HALF_UP);
+        this.dailyMaxLossLimit = this.accountCapital.multiply(BigDecimal.valueOf(0.020)).setScale(0, RoundingMode.HALF_UP);
+        this.todayRealizedPnl = BigDecimal.ZERO;
+        this.todayTradesCount = 0;
+        this.botLogs.clear();
+        this.breakoutWatchlist.clear();
+        this.lastT25AlertTime.clear();
+        this.lastCircuitBreakerLogTime = null;
+
+        addLog(String.format("🔄 [RESET HOÀN TẤT] Đã xóa toàn bộ lịch sử giao dịch cũ. Khởi tạo vốn: %,.0f đ (100%% Tiền mặt).", this.accountCapital));
+        addLog("🛡️ [LÁ CHẮN ĐẦU TUẦN] Danh mục hoàn toàn sạch sẽ, sẵn sàng đón chu kỳ săn lệnh mới từ 09:15 sáng Thứ Hai!");
+        addLog("📊 Mục tiêu phiên: +1.5% NAV/ngày | Cầu chì bảo vệ vốn: Tối đa -2.0% NAV/ngày | Quy tắc 2% NAV mỗi lệnh.");
     }
 
     public BigDecimal getAvailableCash() {
