@@ -34,13 +34,17 @@ public class RiskService {
     public String getSectorForSymbol(String symbol) {
         if (symbol == null) return "KHÁC";
         return switch (symbol.toUpperCase().trim()) {
-            case "FPT", "CMG", "ELC" -> "CÔNG NGHỆ";
-            case "TCB", "VCB", "MBB", "STB", "CTG", "ACB", "VPB", "TPB", "HDB" -> "NGÂN HÀNG";
-            case "HPG", "HSG", "NKG", "DGC" -> "THÉP & HÓA CHẤT";
-            case "SSI", "VND", "VIX", "HCM", "VCI", "SHS" -> "CHỨNG KHOÁN";
-            case "MWG", "MSN", "PNJ", "FRT" -> "BÁN LẺ & TIÊU DÙNG";
-            case "VHM", "VIC", "VRE", "KBC", "NVL", "PDR" -> "BẤT ĐỘNG SẢN";
-            case "PLX", "BSR", "GAS", "PVD", "PVS", "PVT" -> "DẦU KHÍ & NĂNG LƯỢNG";
+            case "FPT", "CMG", "ELC", "ITD" -> "CÔNG NGHỆ";
+            case "TCB", "VCB", "MBB", "STB", "CTG", "ACB", "VPB", "TPB", "HDB", "LPB", "SHB", "VIB", "MSB", "SSB", "EIB", "OCB" -> "NGÂN HÀNG";
+            case "SSI", "VND", "VIX", "HCM", "VCI", "SHS", "MBS", "FTS", "BSI", "CTS", "AGR", "ORSE" -> "CHỨNG KHOÁN";
+            case "HPG", "HSG", "NKG", "DGC", "CSV", "TLH", "SMC", "POM" -> "THÉP & HÓA CHẤT";
+            case "MWG", "MSN", "PNJ", "FRT", "DGW", "PET" -> "BÁN LẺ & TIÊU DÙNG";
+            case "VHM", "VIC", "VRE", "NVL", "PDR", "DIG", "DXG", "NLG", "KDH", "CEO", "HDC", "SCR", "DXS" -> "BẤT ĐỘNG SẢN";
+            case "KBC", "IDC", "BCM", "SZC", "LHG", "VGC", "TIP", "ITA" -> "BẤT ĐỘNG SẢN KCN";
+            case "PLX", "BSR", "GAS", "PVD", "PVS", "PVT", "POW", "REE", "PC1", "GEG", "HDG", "NT2", "SBA" -> "NĂNG LƯỢNG & TIỆN ÍCH";
+            case "GMD", "HAH", "VSC", "VOS", "PVP", "VIP", "TMS", "SGP" -> "CẢNG BIỂN & LOGISTICS";
+            case "VHC", "ANV", "FMC", "BAF", "DBC", "HAG", "HNG", "PAN", "TAR", "LTG" -> "NÔNG NGHIỆP & THỰC PHẨM";
+            case "VCG", "HHV", "C4G", "FCN", "LCG", "CTD", "HBC" -> "XÂY DỰNG & ĐẦU TƯ CÔNG";
             default -> "KHÁC";
         };
     }

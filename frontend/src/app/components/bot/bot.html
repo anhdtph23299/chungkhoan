@@ -190,75 +190,165 @@
   <div class="bot-content-grid">
     <!-- Left Section: Open Positions & Signals -->
     <div class="content-left">
-      <!-- Open Positions Table -->
+      <!-- Open Positions & Closed Trades Table -->
       <div class="card glass-card">
         <div class="card-header">
           <div class="card-title-group">
             <span class="card-title-icon">📊</span>
             <div>
-              <h2 class="card-title">Vị Thế Đang Mở (Live Positions)</h2>
-              <p class="card-subtitle">Theo dõi thời gian thực lãi/lỗ, Stop-Loss GARCH động và tình trạng T+2.5</p>
+              <h2 class="card-title">Quản Trị Danh Mục Vị Thế</h2>
+              <p class="card-subtitle">Theo dõi thời gian thực vị thế mở, tỷ lệ T+2.5 và toàn bộ lịch sử lệnh đã đóng</p>
             </div>
           </div>
-          <span class="badge-count">{{ openPositions.length }} mã đang nắm</span>
-        </div>
-
-        <div class="table-responsive" *ngIf="openPositions.length > 0; else noPositions">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>CỔ PHIẾU</th>
-                <th>GIÁ VÀO</th>
-                <th>SỐ LƯỢNG</th>
-                <th>STOP LOSS (GARCH)</th>
-                <th>TAKE PROFIT</th>
-                <th>LÃI / LỖ (PNL)</th>
-                <th>T+2.5</th>
-                <th>THAO TÁC</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let pos of openPositions" class="position-row">
-                <td class="symbol-col">
-                  <span class="stock-symbol">{{ pos.symbol }}</span>
-                  <span class="stock-strategy">{{ pos.strategy }}</span>
-                </td>
-                <td class="mono-num">{{ pos.price | number:'1.0-0' }} đ</td>
-                <td class="mono-num font-bold">{{ pos.quantity | number }} cp</td>
-                <td class="mono-num text-red">{{ pos.stopLoss ? (pos.stopLoss | number:'1.0-0') : '--' }} đ</td>
-                <td class="mono-num text-green">{{ pos.takeProfit ? (pos.takeProfit | number:'1.0-0') : '--' }} đ</td>
-                <td class="mono-num pnl-col" [class.text-green]="(pos.pnl || 0) >= 0" [class.text-red]="(pos.pnl || 0) < 0">
-                  <div class="pnl-main font-bold">
-                    {{ (pos.pnl || 0) > 0 ? '+' : '' }}{{ (pos.pnl || 0) | number:'1.0-0' }} đ
-                  </div>
-                  <div class="pnl-pct">
-                    ({{ (pos.pnlPercent || 0) > 0 ? '+' : '' }}{{ (pos.pnlPercent || 0) | number:'1.2-2' }}%)
-                  </div>
-                </td>
-                <td>
-                  <span class="badge-t25" [class.locked]="isT25Locked(pos)" [class.ready]="!isT25Locked(pos)">
-                    {{ isT25Locked(pos) ? '⏳ Chờ T+1' : '✅ Khả dụng bán' }}
-                  </span>
-                </td>
-                <td>
-                  <button class="btn btn-harvest" (click)="harvestProfit(pos.symbol)" [disabled]="isLoading" title="Gặt hái 50% tiền mặt và dời Stop-Loss hòa vốn">
-                    🌾 Chốt 50%
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <ng-template #noPositions>
-          <div class="empty-state">
-            <div class="empty-icon">🛡️</div>
-            <div class="empty-title">Chưa có vị thế mở nào</div>
-            <p class="empty-desc">
-              Bot đang trực canh ở chế độ an toàn. Vào sáng Thứ Hai lúc 9h15 khi có tín hiệu đạt chuẩn 16 tầng lọc, bot sẽ tự động giải ngân.
-            </p>
+          <div class="view-mode-tabs" style="margin: 0;">
+            <button class="mode-tab-btn" [class.active]="positionViewTab === 'OPEN'" (click)="setPositionViewTab('OPEN')">
+              🟢 Vị Thế Mở ({{ openPositions.length }})
+            </button>
+            <button class="mode-tab-btn" [class.active]="positionViewTab === 'CLOSED'" (click)="setPositionViewTab('CLOSED')">
+              📋 Lệnh Đã Chốt ({{ closedTrades.length }})
+            </button>
           </div>
-        </ng-template>
+        </div>
+
+        <!-- 1. VỊ THẾ ĐANG MỞ -->
+        <ng-container *ngIf="positionViewTab === 'OPEN'">
+          <div class="table-responsive" *ngIf="openPositions.length > 0; else noPositions">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>CỔ PHIẾU</th>
+                  <th>GIÁ VÀO</th>
+                  <th>SỐ LƯỢNG</th>
+                  <th>STOP LOSS (GARCH)</th>
+                  <th>TAKE PROFIT</th>
+                  <th>LÃI / LỖ (PNL)</th>
+                  <th>T+2.5</th>
+                  <th>THAO TÁC</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let pos of openPositions" class="position-row">
+                  <td class="symbol-col">
+                    <span class="stock-symbol">{{ pos.symbol }}</span>
+                    <span class="stock-strategy">{{ pos.strategy }}</span>
+                  </td>
+                  <td class="mono-num">{{ pos.price | number:'1.0-0' }} đ</td>
+                  <td class="mono-num font-bold">{{ pos.quantity | number }} cp</td>
+                  <td class="mono-num text-red">{{ pos.stopLoss ? (pos.stopLoss | number:'1.0-0') : '--' }} đ</td>
+                  <td class="mono-num text-green">{{ pos.takeProfit ? (pos.takeProfit | number:'1.0-0') : '--' }} đ</td>
+                  <td class="mono-num pnl-col" [class.text-green]="(pos.pnl || 0) >= 0" [class.text-red]="(pos.pnl || 0) < 0">
+                    <div class="pnl-main font-bold">
+                      {{ (pos.pnl || 0) > 0 ? '+' : '' }}{{ (pos.pnl || 0) | number:'1.0-0' }} đ
+                    </div>
+                    <div class="pnl-pct">
+                      ({{ (pos.pnlPercent || 0) > 0 ? '+' : '' }}{{ (pos.pnlPercent || 0) | number:'1.2-2' }}%)
+                    </div>
+                  </td>
+                  <td>
+                    <span class="badge-t25" [class.locked]="isT25Locked(pos)" [class.ready]="!isT25Locked(pos)">
+                      {{ isT25Locked(pos) ? '⏳ Chờ T+1' : '✅ Khả dụng bán' }}
+                    </span>
+                  </td>
+                  <td>
+                    <button class="btn btn-harvest" (click)="harvestProfit(pos.symbol)" [disabled]="isLoading" title="Gặt hái 50% tiền mặt và dời Stop-Loss hòa vốn">
+                      🌾 Chốt 50%
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <ng-template #noPositions>
+            <div class="empty-state">
+              <div class="empty-icon">🛡️</div>
+              <div class="empty-title">Chưa có vị thế mở nào (100% Tiền Mặt)</div>
+              <p class="empty-desc">
+                Toàn bộ danh mục đang giữ tiền mặt an toàn. Vào sáng Thứ Hai (09:15) khi có tín hiệu T1 Pocket Pivot đạt chuẩn, bot sẽ tự động giải ngân.
+              </p>
+              <div style="margin-top: 12px;" *ngIf="closedTrades.length > 0">
+                <button class="filter-pill active" (click)="setPositionViewTab('CLOSED')">
+                  👉 Xem lịch sử {{ closedTrades.length }} lệnh đã chốt
+                </button>
+              </div>
+            </div>
+          </ng-template>
+        </ng-container>
+
+        <!-- 2. LỊCH SỬ LỆNH ĐÃ CHỐT -->
+        <ng-container *ngIf="positionViewTab === 'CLOSED'">
+          <div class="filter-summary-banner" *ngIf="closedTrades.length > 0">
+            <span class="summary-metric">
+              📦 Tổng đã đóng: <strong>{{ closedTrades.length }} lệnh</strong>
+            </span>
+            <span class="summary-separator">|</span>
+            <span class="summary-metric">
+              Tổng Lãi/Lỗ: 
+              <strong [class.text-green]="totalClosedPnl >= 0" [class.text-red]="totalClosedPnl < 0">
+                {{ totalClosedPnl >= 0 ? '+' : '' }}{{ totalClosedPnl | number:'1.0-0' }} đ
+              </strong>
+            </span>
+            <span class="summary-separator">|</span>
+            <span class="summary-metric">
+              Tỷ lệ thắng: <strong>{{ closedTradesWinRate }}%</strong>
+            </span>
+          </div>
+
+          <div class="table-responsive" *ngIf="closedTrades.length > 0; else noClosedTrades">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>CỔ PHIẾU</th>
+                  <th>GIÁ VÀO</th>
+                  <th>GIÁ RA</th>
+                  <th>SỐ LƯỢNG</th>
+                  <th>LÃI / LỖ (PNL)</th>
+                  <th>NGÀY MUA / BÁN</th>
+                  <th>LÝ DO ĐÓNG VỊ THẾ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let trade of closedTrades" class="position-row">
+                  <td class="symbol-col">
+                    <span class="stock-symbol">{{ trade.symbol }}</span>
+                    <span class="stock-strategy">{{ trade.strategy }}</span>
+                  </td>
+                  <td class="mono-num">{{ trade.price | number:'1.0-0' }} đ</td>
+                  <td class="mono-num font-bold">{{ trade.closePrice ? (trade.closePrice | number:'1.0-0') : '--' }} đ</td>
+                  <td class="mono-num">{{ (trade.closeQuantity || trade.quantity) | number }} cp</td>
+                  <td class="mono-num pnl-col" [class.text-green]="(trade.pnl || 0) >= 0" [class.text-red]="(trade.pnl || 0) < 0">
+                    <div class="pnl-main font-bold">
+                      {{ (trade.pnl || 0) > 0 ? '+' : '' }}{{ (trade.pnl || 0) | number:'1.0-0' }} đ
+                    </div>
+                    <div class="pnl-pct">
+                      ({{ (trade.pnlPercent || 0) > 0 ? '+' : '' }}{{ (trade.pnlPercent || 0) | number:'1.2-2' }}%)
+                    </div>
+                  </td>
+                  <td class="font-mono text-secondary" style="font-size: 0.82rem;">
+                    <div>Vào: {{ trade.tradeDate }}</div>
+                    <div *ngIf="trade.closeDate">Ra: {{ trade.closeDate }}</div>
+                  </td>
+                  <td>
+                    <span class="badge-status-pill" [class.profit]="(trade.pnl || 0) > 0" [class.flat]="(trade.pnl || 0) === 0">
+                      {{ (trade.pnl || 0) > 0 ? 'CHỐT LỜI' : 'CẮT LỖ BẢO TOÀN' }}
+                    </span>
+                    <div class="text-secondary" style="font-size: 0.78rem; margin-top: 2px;">
+                      {{ trade.notes || trade.reason || 'Kỷ luật thoát T1' }}
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <ng-template #noClosedTrades>
+            <div class="empty-state">
+              <div class="empty-icon">📋</div>
+              <div class="empty-title">Chưa có lệnh nào được chốt</div>
+              <p class="empty-desc">Lịch sử các lệnh đã đóng vị thế sẽ xuất hiện tại đây khi bot thực hiện chốt lời hoặc cắt lỗ.</p>
+            </div>
+          </ng-template>
+        </ng-container>
       </div>
 
       <!-- Radar Rình Mồi Chờ Nổ Vol (Breakout Watchlist Queue) -->

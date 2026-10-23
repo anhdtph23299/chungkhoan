@@ -42,52 +42,38 @@ public class SignalValidatorService {
     public void init() {
         addLog("🚀 [JOB 2 KHỞI CHẠY] Signal Validator: Đã kích hoạt chế độ Mở Toang Cánh Cửa — trực canh kiểm chứng toàn bộ tín hiệu mua không giới hạn vốn!");
         addLog("🔬 [NGUYÊN TẮC KIỂM CHỨNG] Không bị ràng buộc bởi tiền mặt 100tr, trần ngành 35% hay giới hạn 4 mã. Bắt trọn vẹn mọi điểm nổ Score ≥ 70!");
+        new Thread(() -> {
+            try {
+                Thread.sleep(4000);
+                if (validationRepository.count() == 0) {
+                    scanAndRecordSignals(LocalDate.now());
+                }
+            } catch (Exception ignored) {}
+        }).start();
     }
 
-    @Scheduled(fixedDelay = 30000, initialDelay = 5000)
-    public void executeValidatorCycle() {
-        if (!isRunning) return;
-
-        // Kiểm tra giờ giao dịch sàn HOSE/HNX (09:15 - 11:30 và 13:00 - 14:45 từ Thứ 2 đến Thứ 6)
-        LocalDate today = LocalDate.now();
-        java.time.DayOfWeek dow = today.getDayOfWeek();
-        boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
-        LocalTime nowTime = LocalTime.now();
-        boolean isTradingSession = !isWeekend && (
-            (nowTime.isAfter(LocalTime.of(9, 15)) && nowTime.isBefore(LocalTime.of(11, 30))) ||
-            (nowTime.isAfter(LocalTime.of(13, 0)) && nowTime.isBefore(LocalTime.of(14, 45)))
-        );
-
-        // 1. Luôn theo dõi cập nhật các lệnh PENDING đã ghi nhận
+    public synchronized Map<String, Object> triggerManualScan() {
         trackPendingSignals();
+        int newSignals = scanAndRecordSignals(LocalDate.now());
+        addLog(String.format("⚡ [QUÉT THỦ CÔNG JOB 2] Quét toàn bộ %d mã: Bổ sung %d tín hiệu mới.",
+            VALIDATION_SYMBOLS.size(), newSignals));
+        return getStats();
+    }
 
-        if (!isTradingSession) {
-            return;
-        }
-
-        // 2. MỞ TOANG CÁNH CỬA: Quét toàn bộ cổ phiếu tìm tín hiệu MUA
-        // KHÔNG bị giới hạn bởi: Vốn 100tr, Tiền mặt khả dụng, Trần ngành 35% NAV, hay Tối đa 4 vị thế!
+    public synchronized int scanAndRecordSignals(LocalDate today) {
+        int newSignalsCount = 0;
         try {
             List<StockScanResult> scans = strategyService.scanAllStocks();
-            int newSignalsCount = 0;
-
             for (StockScanResult scan : scans) {
-                // Tín hiệu đạt chuẩn công thức (Score >= 70 và có khuyến nghị BUY)
                 if (scan.getConfidenceScore() >= 70 && scan.getAction() != null && scan.getAction().contains("BUY")) {
                     String symbol = scan.getSymbol().toUpperCase();
 
-                    // Kiểm tra xem hôm nay hoặc mã này đã có lệnh PENDING mở gần đây chưa để tránh duplicate spam
                     boolean alreadyPending = validationRepository.findAllPending().stream()
                         .anyMatch(t -> t.getSymbol().equalsIgnoreCase(symbol));
-
-                    if (alreadyPending) {
-                        continue;
-                    }
+                    if (alreadyPending) continue;
 
                     boolean alreadySignaledToday = validationRepository.existsBySymbolAndSignalDate(symbol, today);
-                    if (alreadySignaledToday) {
-                        continue;
-                    }
+                    if (alreadySignaledToday) continue;
 
                     StockQuote liveQuote = stockPriceService.getQuote(symbol);
                     BigDecimal entryPrice = (liveQuote != null && liveQuote.getPrice() != null && liveQuote.getPrice().compareTo(BigDecimal.ZERO) > 0)
@@ -128,17 +114,41 @@ public class SignalValidatorService {
                         symbol, entryPrice, scan.getConfidenceScore(), stopLoss, takeProfit));
                 }
             }
-
-            cycleCount++;
-            if (cycleCount == 1 || cycleCount % 5 == 0) {
-                var stats = getStats();
-                addLog(String.format("📊 [JOB 2 VALIDATOR THỐNG KÊ] Tổng: %s tín hiệu | Đang theo dõi: %s | Thắng: %s - Thua: %s | Win Rate: %s%% | Kỳ vọng: %s%%",
-                    stats.get("totalSignals"), stats.get("pendingCount"), stats.get("winCount"), stats.get("lossCount"),
-                    stats.get("winRate"), stats.get("expectancy")));
-            }
-
         } catch (Exception e) {
-            log.error("Lỗi trong chu kỳ quét SignalValidator: {}", e.getMessage());
+            log.error("Lỗi trong scanAndRecordSignals: {}", e.getMessage());
+        }
+        return newSignalsCount;
+    }
+
+    @Scheduled(fixedDelay = 30000, initialDelay = 5000)
+    public void executeValidatorCycle() {
+        if (!isRunning) return;
+
+        LocalDate today = LocalDate.now();
+        java.time.DayOfWeek dow = today.getDayOfWeek();
+        boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
+        LocalTime nowTime = LocalTime.now();
+        boolean isTradingSession = !isWeekend && (
+            (nowTime.isAfter(LocalTime.of(9, 15)) && nowTime.isBefore(LocalTime.of(11, 30))) ||
+            (nowTime.isAfter(LocalTime.of(13, 0)) && nowTime.isBefore(LocalTime.of(14, 45)))
+        );
+
+        // 1. Luôn theo dõi cập nhật các lệnh PENDING đã ghi nhận
+        trackPendingSignals();
+
+        if (!isTradingSession) {
+            return;
+        }
+
+        // 2. Quét ghi nhận tín hiệu trong phiên
+        scanAndRecordSignals(today);
+
+        cycleCount++;
+        if (cycleCount == 1 || cycleCount % 5 == 0) {
+            var stats = getStats();
+            addLog(String.format("📊 [JOB 2 VALIDATOR THỐNG KÊ] Tổng: %s tín hiệu | Đang theo dõi: %s | Thắng: %s - Thua: %s | Win Rate: %s%% | Kỳ vọng: %s%%",
+                stats.get("totalSignals"), stats.get("pendingCount"), stats.get("winCount"), stats.get("lossCount"),
+                stats.get("winRate"), stats.get("expectancy")));
         }
     }
 

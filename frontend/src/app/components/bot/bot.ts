@@ -33,6 +33,7 @@ export class BotComponent implements OnInit, OnDestroy {
 
   openPositions: Trade[] = [];
   closedTrades: Trade[] = [];
+  positionViewTab: 'OPEN' | 'CLOSED' = 'OPEN';
   signals: SignalScreener[] = [];
   sectorRrg?: RrgData;
   breakoutQueue: BreakoutItem[] = [];
@@ -176,11 +177,26 @@ export class BotComponent implements OnInit, OnDestroy {
     this.tradeService.getAllTrades().subscribe({
       next: (trades) => {
         this.openPositions = trades.filter(t => t.status === 'open');
-        this.closedTrades = trades.filter(t => t.status === 'closed').slice(0, 10);
+        this.closedTrades = trades.filter(t => t.status === 'closed');
         this.cdr.markForCheck();
       },
       error: (e) => console.debug('Error getting trades', e)
     });
+  }
+
+  setPositionViewTab(tab: 'OPEN' | 'CLOSED'): void {
+    this.positionViewTab = tab;
+    this.cdr.markForCheck();
+  }
+
+  get totalClosedPnl(): number {
+    return this.closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+  }
+
+  get closedTradesWinRate(): number {
+    if (this.closedTrades.length === 0) return 0;
+    const wins = this.closedTrades.filter(t => (t.pnl || 0) > 0).length;
+    return Math.round((wins / this.closedTrades.length) * 100);
   }
 
   loadSignals(): void {

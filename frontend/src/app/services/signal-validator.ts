@@ -60,6 +60,10 @@ export class SignalValidatorService {
     return this.http.get<string[]>(`${this.api}/logs`);
   }
 
+  scanNow(): Observable<ValidatorStats> {
+    return this.http.post<ValidatorStats>(`${this.api}/scan`, {});
+  }
+
   reset(): Observable<any> {
     return this.http.delete(`${this.api}/reset`);
   }

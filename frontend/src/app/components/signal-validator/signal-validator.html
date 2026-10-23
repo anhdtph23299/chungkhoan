@@ -10,14 +10,24 @@
       <p class="hero-subtitle">
         Job ngầm chạy độc lập với Bot 100tr. Ghi nhận <strong>toàn bộ tín hiệu Mua đạt chuẩn (Score ≥ 70)</strong> trên thị trường mà không bị trói buộc bởi: <em>Số dư tiền mặt, Giới hạn 4 mã hay Trần ngành 35% NAV</em>. Giúp chứng minh tính đúng đắn toán học của công thức qua mẫu lớn!
       </p>
-      <div class="job-sync-badge">
-        💼 <strong>Đối chiếu Bot 100tr thực tế (Job 1):</strong> Nắm 4 mã <em>TCB (+4.2%), GMD (+4.2%), FRT (+4.1%), HSG (-1.8%)</em> — Lãi thả nổi: <strong class="text-green">+2,600,000 đ</strong>
+      <div class="job-sync-badge" *ngIf="botStatus">
+        💼 <strong>Đối chiếu Bot 100tr thực tế (Job 1):</strong>
+        <ng-container *ngIf="botStatus.investedStockValue && botStatus.investedStockValue > 0">
+          Đang nắm {{ botStatus.stockRatioPercent | number:'1.1-1' }}% NAV cổ phiếu — Tiền mặt khả dụng: <strong>{{ botStatus.availableCash | number:'1.0-0' }} đ</strong>
+        </ng-container>
+        <ng-container *ngIf="!botStatus.investedStockValue || botStatus.investedStockValue === 0">
+          Toàn bộ vị thế đã chốt lời bảo toàn vốn. Tiền mặt 100% (<strong>{{ (botStatus.availableCash || botStatus.currentNav) | number:'1.0-0' }} đ</strong>) sẵn sàng cho phiên kế tiếp.
+        </ng-container>
       </div>
     </div>
 
     <div class="hero-right">
       <div class="hero-actions">
-        <button class="btn btn-refresh" (click)="loadAll()">🔄 Cập nhật ngay</button>
+        <button class="btn btn-refresh" (click)="triggerScan()" [disabled]="isScanning" title="Quét toàn bộ thị trường tìm và cập nhật tín hiệu đạt chuẩn ngay lập tức">
+          <span *ngIf="!isScanning">⚡ Quét tín hiệu ngay</span>
+          <span *ngIf="isScanning">⏳ Đang quét...</span>
+        </button>
+        <button class="btn btn-refresh" (click)="loadAll()">🔄 Cập nhật</button>
         <button class="btn btn-danger" (click)="reset()" [disabled]="isResetting">🗑️ Khởi tạo lại</button>
       </div>
       <div class="scan-time-badge">

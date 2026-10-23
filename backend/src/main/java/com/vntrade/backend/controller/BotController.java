@@ -155,7 +155,7 @@ public class BotController {
 
     @PostMapping("/trigger-cycle")
     public ResponseEntity<Map<String, Object>> triggerCycle() {
-        botService.executeBotCycle();
+        botService.executeManualCycle();
         return ResponseEntity.ok(Map.of(
             "status", "CYCLE_EXECUTED",
             "todayRealizedPnl", botService.getTodayRealizedPnl(),

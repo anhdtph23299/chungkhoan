@@ -32,6 +32,11 @@ public class SignalValidatorController {
         return ResponseEntity.ok(validatorService.getValidatorLogs());
     }
 
+    @PostMapping("/scan")
+    public ResponseEntity<Map<String, Object>> scanNow() {
+        return ResponseEntity.ok(validatorService.triggerManualScan());
+    }
+
     @PostMapping("/toggle")
     public ResponseEntity<Map<String, Object>> toggle() {
         boolean newState = !validatorService.isRunning();

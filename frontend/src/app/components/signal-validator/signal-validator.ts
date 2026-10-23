@@ -6,6 +6,7 @@ import {
   SignalValidationTrade,
   ValidatorStats
 } from '../../services/signal-validator';
+import { BotService, BotStatus } from '../../services/bot';
 
 @Component({
   selector: 'app-signal-validator',
@@ -24,8 +25,10 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
   };
   signals: SignalValidationTrade[] = [];
   logs: string[] = [];
+  botStatus?: BotStatus;
   activeTab: 'signals' | 'pending' | 'green' | 'red' | 'closed' | 'logs' = 'signals';
   isResetting = false;
+  isScanning = false;
   searchTerm = '';
   sortBy: 'score' | 'pnl' | 'symbol' = 'pnl';
   sortDir: 'asc' | 'desc' = 'desc';
@@ -34,15 +37,48 @@ export class SignalValidatorComponent implements OnInit, OnDestroy {
 
   constructor(
     private validatorService: SignalValidatorService,
+    private botService: BotService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit() {
     this.loadAll();
+    this.loadBotStatus();
     // Poll every 10 seconds
     this.subs.push(
-      interval(10000).subscribe(() => this.loadAll())
+      interval(10000).subscribe(() => {
+        this.loadAll();
+        this.loadBotStatus();
+      })
     );
+  }
+
+  loadBotStatus() {
+    this.botService.getBotStatus().subscribe({
+      next: s => {
+        this.botStatus = s;
+        this.cdr.markForCheck();
+      },
+      error: err => console.debug('Bot status sync error:', err)
+    });
+  }
+
+  triggerScan() {
+    this.isScanning = true;
+    this.cdr.markForCheck();
+    this.validatorService.scanNow().subscribe({
+      next: stats => {
+        this.stats = stats;
+        this.loadAll();
+        this.isScanning = false;
+        this.cdr.markForCheck();
+      },
+      error: err => {
+        console.error('Scan error:', err);
+        this.isScanning = false;
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   ngOnDestroy() {
