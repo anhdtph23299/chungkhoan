@@ -2,6 +2,13 @@ import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BotService } from '../../services/bot';
+import {
+  RiskService,
+  PortfolioHealthReport,
+  RealMoneyAuditDto,
+  VeteranDisciplineAudit,
+  BlackSwanStressScenario
+} from '../../services/risk';
 
 @Component({
   selector: 'app-risk',
@@ -11,6 +18,8 @@ import { BotService } from '../../services/bot';
   styleUrl: './risk.scss'
 })
 export class RiskComponent implements OnInit {
+  activeTab: 'sizer' | 'audit' | 'blackswan' = 'sizer';
+
   // Calculator inputs
   accountCapital = 100000000; // Mặc định 100 triệu theo tài khoản Bot thực tế
   maxRiskPercent = 1.5;       // 1.5% rủi ro tối đa theo chiến lược T1 Core
@@ -18,6 +27,14 @@ export class RiskComponent implements OnInit {
   stopLossPrice = 32550;      // -7%
   takeProfitPrice = 40250;    // +15%
   liveNav = 97655312;
+
+  // Institutional data
+  portfolioHealth: PortfolioHealthReport | null = null;
+  realMoneyAudit: RealMoneyAuditDto | null = null;
+  veteranAudit: VeteranDisciplineAudit | null = null;
+  blackSwan: BlackSwanStressScenario | null = null;
+  loadingAudit = false;
+  loadingBlackSwan = false;
 
   // Drawdown math table
   drawdownData = [
@@ -31,11 +48,17 @@ export class RiskComponent implements OnInit {
 
   constructor(
     private botService: BotService,
+    private riskService: RiskService,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
     this.updateByPercent();
+    this.loadBotInfo();
+    this.loadAuditData();
+  }
+
+  loadBotInfo(): void {
     this.botService.getBotStatus().subscribe({
       next: (status) => {
         if (status.currentNav) {
@@ -51,6 +74,60 @@ export class RiskComponent implements OnInit {
       },
       error: () => {}
     });
+  }
+
+  loadAuditData(): void {
+    this.loadingAudit = true;
+    this.riskService.getPortfolioHealth().subscribe({
+      next: (health) => {
+        this.portfolioHealth = health;
+        this.loadingAudit = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.loadingAudit = false;
+        this.cdr.markForCheck();
+      }
+    });
+
+    this.riskService.getRealMoneyAudit().subscribe({
+      next: (audit) => {
+        this.realMoneyAudit = audit;
+        this.cdr.markForCheck();
+      },
+      error: () => {}
+    });
+
+    this.riskService.getVeteranDisciplineAudit().subscribe({
+      next: (va) => {
+        this.veteranAudit = va;
+        this.cdr.markForCheck();
+      },
+      error: () => {}
+    });
+
+    this.loadingBlackSwan = true;
+    this.riskService.getBlackSwanStress().subscribe({
+      next: (bs) => {
+        this.blackSwan = bs;
+        this.loadingBlackSwan = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.loadingBlackSwan = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  setTab(tab: 'sizer' | 'audit' | 'blackswan'): void {
+    this.activeTab = tab;
+    this.cdr.markForCheck();
+  }
+
+  getSectorEntries(): { key: string; value: number }[] {
+    if (!this.portfolioHealth || !this.portfolioHealth.sectorAllocations) return [];
+    return Object.entries(this.portfolioHealth.sectorAllocations).map(([key, value]) => ({ key, value }));
   }
 
   setCapital(amount: number): void {

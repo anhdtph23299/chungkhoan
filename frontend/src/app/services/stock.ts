@@ -28,6 +28,31 @@ export interface MarketIndex {
   timestamp: string;
 }
 
+export interface PreMarketStockWatch {
+  symbol: string;
+  sector: string;
+  referencePrice: number;
+  focusReason: string;
+  triggerAction: string;
+}
+
+export interface PreMarketSentiment {
+  checkedAt: string;
+  brentPrice: number;
+  brentChangePercent: number;
+  wtiPrice: number;
+  wtiChangePercent: number;
+  oilMarketStatus: string;
+  usMarketSentiment: string;
+  asiaMarketSentiment: string;
+  foreignFlowYesterdayBillionVnd: number;
+  openingMarketSentiment: string;
+  sentimentScore: number;
+  hypothesisVerdict: string;
+  recommendedOpeningTactic: string;
+  priorityWatchlist: PreMarketStockWatch[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class StockService {
   private baseUrl = 'http://localhost:8085/api/stock';
@@ -46,5 +71,8 @@ export class StockService {
   getMarketIndices(): Observable<MarketIndex[]> {
     return this.http.get<MarketIndex[]>(`${this.baseUrl}/market-indices`);
   }
-}
 
+  getPreMarketSentiment(): Observable<PreMarketSentiment> {
+    return this.http.get<PreMarketSentiment>('http://localhost:8085/api/analysis/pre-market-sentiment');
+  }
+}

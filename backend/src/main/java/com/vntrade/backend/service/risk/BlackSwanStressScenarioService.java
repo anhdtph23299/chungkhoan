@@ -22,7 +22,7 @@ public class BlackSwanStressScenarioService {
     private final TradeRepository tradeRepository;
     private final StockPriceService stockPriceService;
 
-    private static final BigDecimal DEFAULT_CAPITAL = BigDecimal.valueOf(300_000_000); // 300 triệu
+    private static final BigDecimal DEFAULT_CAPITAL = BigDecimal.valueOf(100_000_000); // 100 triệu
     private static final double VN30_INDEX_VALUE = 1320.0;
     private static final double VN30_FUTURES_MULTIPLIER = 100_000.0; // 100.000 đ / điểm hợp đồng
 

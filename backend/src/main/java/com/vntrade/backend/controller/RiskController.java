@@ -41,11 +41,27 @@ public class RiskController {
     private final com.vntrade.backend.service.calculation.GarchVolatilityForecastService garchVolatilityForecastService;
     private final com.vntrade.backend.service.risk.BlackSwanStressScenarioService blackSwanStressScenarioService;
     private final com.vntrade.backend.service.calculation.LiquidityAdjustedReturnService liquidityAdjustedReturnService;
+    private final com.vntrade.backend.service.execution.AutoTradingBotService autoTradingBotService;
+
+    private java.math.BigDecimal resolveNav(java.math.BigDecimal capital) {
+        if (capital != null && capital.compareTo(java.math.BigDecimal.ZERO) > 0) {
+            return capital;
+        }
+        if (autoTradingBotService != null) {
+            try {
+                java.math.BigDecimal nav = autoTradingBotService.getCurrentNav();
+                if (nav != null && nav.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                    return nav;
+                }
+            } catch (Exception ignored) {}
+        }
+        return java.math.BigDecimal.valueOf(100_000_000);
+    }
 
     @GetMapping("/black-swan-stress")
     public ResponseEntity<com.vntrade.backend.dto.BlackSwanStressScenarioDto> getBlackSwanStressScenarios(
             @RequestParam(required = false) java.math.BigDecimal capital) {
-        return ResponseEntity.ok(blackSwanStressScenarioService.simulateBlackSwanScenarios(capital));
+        return ResponseEntity.ok(blackSwanStressScenarioService.simulateBlackSwanScenarios(resolveNav(capital)));
     }
 
     /**
@@ -72,7 +88,7 @@ public class RiskController {
     public ResponseEntity<com.vntrade.backend.dto.BlackLittermanAllocationDto> getBlackLittermanAllocation(
         @RequestParam(required = false) java.math.BigDecimal capital
     ) {
-        return ResponseEntity.ok(blackLittermanAllocationService.calculateBlackLittermanAllocation(capital));
+        return ResponseEntity.ok(blackLittermanAllocationService.calculateBlackLittermanAllocation(resolveNav(capital)));
     }
 
     @GetMapping("/target-volatility-scaling")
@@ -80,7 +96,7 @@ public class RiskController {
         @RequestParam(required = false) java.math.BigDecimal capital,
         @RequestParam(required = false) Double targetVol
     ) {
-        return ResponseEntity.ok(targetVolatilityScalingService.calculateTargetVolatilityScaling(capital, targetVol));
+        return ResponseEntity.ok(targetVolatilityScalingService.calculateTargetVolatilityScaling(resolveNav(capital), targetVol));
     }
 
     @GetMapping("/foreign-flow/{symbol}")
@@ -92,7 +108,7 @@ public class RiskController {
     public ResponseEntity<com.vntrade.backend.dto.PortfolioVarRiskDto> getPortfolioVarAnalysis(
         @RequestParam(required = false) java.math.BigDecimal capital
     ) {
-        return ResponseEntity.ok(portfolioVarRiskService.calculatePortfolioVarRisk(capital));
+        return ResponseEntity.ok(portfolioVarRiskService.calculatePortfolioVarRisk(resolveNav(capital)));
     }
 
     @GetMapping("/kelly/{symbol}")
@@ -100,14 +116,14 @@ public class RiskController {
         @PathVariable String symbol,
         @RequestParam(required = false) java.math.BigDecimal capital
     ) {
-        return ResponseEntity.ok(kellyCriterionService.calculateKellySizing(symbol, capital));
+        return ResponseEntity.ok(kellyCriterionService.calculateKellySizing(symbol, resolveNav(capital)));
     }
 
     @GetMapping("/stress-test")
     public ResponseEntity<com.vntrade.backend.dto.StressTestReportDto> getStressTest(
         @RequestParam(required = false) java.math.BigDecimal capital
     ) {
-        return ResponseEntity.ok(riskStressTestService.conductHistoricalStressTests(capital));
+        return ResponseEntity.ok(riskStressTestService.conductHistoricalStressTests(resolveNav(capital)));
     }
 
     @GetMapping("/circuit-breaker")
@@ -127,12 +143,15 @@ public class RiskController {
 
     @PostMapping("/position-size")
     public ResponseEntity<PositionSizingResult> calculatePositionSize(@RequestBody PositionSizingRequest request) {
+        if (request.getAccountCapital() == null || request.getAccountCapital().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+            request.setAccountCapital(resolveNav(null));
+        }
         return ResponseEntity.ok(riskService.calculatePositionSize(request));
     }
 
     @GetMapping("/portfolio-health")
     public ResponseEntity<com.vntrade.backend.dto.PortfolioHealthReport> getPortfolioHealth() {
-        return ResponseEntity.ok(riskService.evaluatePortfolioHealth());
+        return ResponseEntity.ok(riskService.evaluatePortfolioHealth(resolveNav(null)));
     }
 
     @GetMapping("/drawdown-matrix")

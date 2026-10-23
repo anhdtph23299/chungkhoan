@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TradeService, Trade, PortfolioSummary } from '../../services/trade';
-import { StockService, StockQuote, MarketIndex } from '../../services/stock';
+import { StockService, StockQuote, MarketIndex, PreMarketSentiment } from '../../services/stock';
 import { IncomeService, DailyIncome, SmartMoneyFlow, WealthProjection } from '../../services/income';
 import { RiskService, VeteranDisciplineAudit } from '../../services/risk';
 import { forkJoin, interval, Subscription } from 'rxjs';
@@ -37,6 +37,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   wealthProjection: WealthProjection | null = null;
   smartMoneyPicks: SmartMoneyFlow[] = [];
   veteranAudit: VeteranDisciplineAudit | null = null;
+  preMarket: PreMarketSentiment | null = null;
 
   // ---- Quick Trade Modal ----
   showQuickTradeModal = false;
@@ -151,6 +152,11 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.riskService.getVeteranDisciplineAudit().subscribe({
       next: (audit) => { this.veteranAudit = audit; this.cdr.markForCheck(); },
       error: () => { this.cdr.markForCheck(); }
+    });
+
+    this.stockService.getPreMarketSentiment().subscribe({
+      next: (data) => { this.preMarket = data; this.cdr.markForCheck(); },
+      error: () => {}
     });
   }
 

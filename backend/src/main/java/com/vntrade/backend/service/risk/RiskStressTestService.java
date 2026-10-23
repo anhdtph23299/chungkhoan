@@ -16,7 +16,7 @@ public class RiskStressTestService {
     public StressTestReportDto conductHistoricalStressTests(BigDecimal currentNav) {
         BigDecimal nav = currentNav != null && currentNav.compareTo(BigDecimal.ZERO) > 0
             ? currentNav
-            : BigDecimal.valueOf(220_171_750);
+            : BigDecimal.valueOf(100_000_000);
 
         List<StressTestReportDto.CrisisScenarioResult> scenarios = List.of(
             StressTestReportDto.CrisisScenarioResult.builder()

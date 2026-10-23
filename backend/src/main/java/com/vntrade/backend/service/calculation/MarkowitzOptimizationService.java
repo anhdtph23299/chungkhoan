@@ -22,7 +22,7 @@ public class MarkowitzOptimizationService {
     public MarkowitzEfficientFrontierDto calculateEfficientFrontier(BigDecimal customNav) {
         BigDecimal nav = customNav != null && customNav.compareTo(BigDecimal.ZERO) > 0
             ? customNav
-            : BigDecimal.valueOf(220_171_750);
+            : BigDecimal.valueOf(100_000_000);
 
         // Danh mục tối ưu theo bài toán Max Sharpe với ràng buộc trần 25% từng mã và trần ngành 35%
         Map<String, BigDecimal> optimalWeights = new LinkedHashMap<>();

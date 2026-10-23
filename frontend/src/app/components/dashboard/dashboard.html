@@ -343,6 +343,44 @@
         </div>
       </div>
 
+      <!-- Pre-Market Intelligence Briefing -->
+      <div class="glass-card content-card" *ngIf="preMarket" style="border: 1px solid rgba(0, 242, 254, 0.2); background: linear-gradient(135deg, rgba(10, 20, 40, 0.75), rgba(15, 25, 50, 0.85)); margin-bottom: 20px;">
+        <div class="card-head">
+          <div class="head-left">
+            <h2>🌍 Tình Báo Vĩ Mô & Pre-Market</h2>
+          </div>
+          <span class="pill pill-primary font-mono">Điểm: {{ preMarket.sentimentScore }}/100</span>
+        </div>
+
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; font-size: 0.82rem;">
+          <div style="flex: 1; min-width: 120px; background: rgba(0,0,0,0.3); padding: 8px 10px; border-radius: 8px;">
+            <span style="color: var(--text-muted); font-size: 0.72rem; display: block;">Dầu Brent:</span>
+            <strong class="font-mono stock-up">${{ preMarket.brentPrice }} (+{{ preMarket.brentChangePercent }}%)</strong>
+          </div>
+          <div style="flex: 1; min-width: 120px; background: rgba(0,0,0,0.3); padding: 8px 10px; border-radius: 8px;">
+            <span style="color: var(--text-muted); font-size: 0.72rem; display: block;">Khối Ngoại:</span>
+            <strong class="font-mono stock-down">{{ preMarket.foreignFlowYesterdayBillionVnd }} tỷ</strong>
+          </div>
+        </div>
+
+        <div style="margin-top: 10px; font-size: 0.8rem; line-height: 1.45; color: var(--text-secondary); background: rgba(0, 242, 254, 0.05); padding: 10px; border-radius: 8px; border-left: 3px solid var(--accent-primary);">
+          🎯 <strong>Chiến thuật:</strong> {{ preMarket.recommendedOpeningTactic }}
+        </div>
+
+        <div style="margin-top: 12px;">
+          <span style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Mục Tiêu Trực Canh Sáng Thứ 2:</span>
+          <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+            <div *ngFor="let pw of preMarket.priorityWatchlist" style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 6px; font-size: 0.8rem;">
+              <div>
+                <strong class="symbol-tag" style="margin-right: 6px;">{{ pw.symbol }}</strong>
+                <span style="color: var(--text-muted); font-size: 0.72rem;">{{ pw.sector }}</span>
+              </div>
+              <span class="font-mono font-bold">{{ pw.referencePrice | number }} đ</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Real Money Trading Roadmap -->
       <div class="glass-card roadmap-card">
         <div class="roadmap-head">

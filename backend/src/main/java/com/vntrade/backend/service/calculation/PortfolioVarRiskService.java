@@ -24,7 +24,7 @@ public class PortfolioVarRiskService {
     public PortfolioVarRiskDto calculatePortfolioVarRisk(BigDecimal customNav) {
         BigDecimal nav = customNav != null && customNav.compareTo(BigDecimal.ZERO) > 0
             ? customNav
-            : BigDecimal.valueOf(220_171_750);
+            : BigDecimal.valueOf(100_000_000);
 
         List<Trade> openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
         Map<String, BigDecimal> allocationMap = new HashMap<>();

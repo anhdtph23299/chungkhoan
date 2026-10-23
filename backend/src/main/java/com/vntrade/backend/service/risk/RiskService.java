@@ -116,7 +116,13 @@ public class RiskService {
      * Đánh giá sức khỏe và phòng thủ rủi ro toàn danh mục
      */
     public PortfolioHealthReport evaluatePortfolioHealth() {
-        BigDecimal totalNav = BigDecimal.valueOf(200_000_000);
+        return evaluatePortfolioHealth(BigDecimal.valueOf(100_000_000));
+    }
+
+    public PortfolioHealthReport evaluatePortfolioHealth(BigDecimal customNav) {
+        BigDecimal totalNav = (customNav != null && customNav.compareTo(BigDecimal.ZERO) > 0)
+            ? customNav
+            : BigDecimal.valueOf(100_000_000);
         List<Trade> openTrades = tradeRepository != null ? tradeRepository.findOpenBuyTrades() : List.of();
         List<Trade> closedTrades = tradeRepository != null ? tradeRepository.findByStatusOrderByTradeDateDesc("closed") : List.of();
 
@@ -199,7 +205,7 @@ public class RiskService {
      */
     public PositionSizingResult calculatePositionSize(PositionSizingRequest req) {
         BigDecimal capital = req.getAccountCapital() != null && req.getAccountCapital().compareTo(BigDecimal.ZERO) > 0
-            ? req.getAccountCapital() : BigDecimal.valueOf(200_000_000);
+            ? req.getAccountCapital() : BigDecimal.valueOf(100_000_000);
 
         BigDecimal riskPct = req.getMaxRiskPercent() != null && req.getMaxRiskPercent().compareTo(BigDecimal.ZERO) > 0
             ? req.getMaxRiskPercent() : getDynamicRiskPercent();

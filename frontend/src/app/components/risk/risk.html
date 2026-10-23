@@ -2,204 +2,447 @@
   <!-- Header -->
   <div class="risk-header">
     <div>
-      <h1 class="page-title">Quản Trị Rủi Ro & Định Lượng Khối Lượng (Risk Management)</h1>
-      <p class="page-subtitle">Công thức toán học của các quỹ chuyên nghiệp để không bao giờ cháy tài khoản và luôn có lãi</p>
+      <h1 class="page-title">Quản Trị Rủi Ro & Kiểm Định Định Lượng (Risk Management)</h1>
+      <p class="page-subtitle">Công thức toán học của các quỹ chuyên nghiệp để bảo toàn 100% vốn gốc và kiểm định an toàn trước khi đánh tiền thật</p>
+    </div>
+    <div>
+      <span class="pill pill-primary font-mono">NAV: {{ liveNav | number:'1.0-0' }} đ</span>
     </div>
   </div>
 
-  <!-- Calculator & Live Sizing Results -->
-  <div class="calculator-grid">
-    <!-- Left: Inputs -->
-    <div class="glass-card calc-card">
-      <div class="card-head">
-        <h2>🧮 Máy Tính Khối Lượng Vào Lệnh (Position Sizer)</h2>
-        <span class="pill pill-primary">Quy Tắc 2% NAV</span>
-      </div>
+  <!-- Subtabs Bar -->
+  <div class="risk-tabs-bar">
+    <button class="risk-tab-btn" [class.active]="activeTab === 'sizer'" (click)="setTab('sizer')">
+      <span>🧮</span> Máy Tính Khối Lượng (Position Sizer)
+    </button>
+    <button class="risk-tab-btn" [class.active]="activeTab === 'audit'" (click)="setTab('audit')">
+      <span>🛡️</span> Sức Khỏe Danh Mục & Kiểm Định Tiền Thật
+      <span class="pill pill-purple" *ngIf="realMoneyAudit" style="font-size: 0.72rem; padding: 2px 6px;">{{ realMoneyAudit.readinessScorePercent }}% Đạt</span>
+    </button>
+    <button class="risk-tab-btn" [class.active]="activeTab === 'blackswan'" (click)="setTab('blackswan')">
+      <span>🦢</span> Kiểm Tra Chịu Tải Thiên Nga Đen (Black Swan)
+      <span class="pill pill-up" *ngIf="blackSwan" style="font-size: 0.72rem; padding: 2px 6px;">Điểm: {{ blackSwan.overallResilienceScore }}/100</span>
+    </button>
+  </div>
 
-      <div class="calc-inputs">
-        <div class="form-group">
-          <label class="form-label">Tổng Vốn Tài Khoản Của Bạn (NAV)</label>
-          <div class="input-with-suffix">
-            <input type="number" step="1000000" class="form-control font-mono" [(ngModel)]="accountCapital">
-            <span class="suffix">VNĐ</span>
-          </div>
-          <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
-            <button type="button" class="pill pill-primary" style="cursor: pointer; border: none; font-size: 0.75rem;" (click)="setCapital(100000000)">100 Triệu (Vốn Gốc)</button>
-            <button type="button" class="pill pill-purple" style="cursor: pointer; border: none; font-size: 0.75rem;" (click)="setCapital(liveNav)">NAV Hiện Tại ({{ liveNav | number:'1.0-0' }} đ)</button>
-            <button type="button" class="pill" style="cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; font-size: 0.75rem;" (click)="setCapital(50000000)">50 Triệu</button>
-            <button type="button" class="pill" style="cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; font-size: 0.75rem;" (click)="setCapital(200000000)">200 Triệu</button>
-          </div>
-          <span class="input-hint">Vốn thực tế bạn sẵn sàng phân bổ vào chứng khoán</span>
+  <!-- TAB 1: POSITION SIZER -->
+  <ng-container *ngIf="activeTab === 'sizer'">
+    <div class="calculator-grid">
+      <!-- Left: Inputs -->
+      <div class="glass-card calc-card">
+        <div class="card-head">
+          <h2>🧮 Máy Tính Khối Lượng Vào Lệnh (Position Sizer)</h2>
+          <span class="pill pill-primary">Quy Tắc 2% NAV</span>
         </div>
 
-        <div class="form-group">
-          <div class="label-with-badge">
-            <label class="form-label">Mức Rủi Ro Tối Đa Cho 1 Deal</label>
-            <span class="pill pill-purple">{{ maxRiskPercent }}% NAV ({{ maxAllowedLossAmount | number:'1.0-0' }} đ)</span>
-          </div>
-          <input type="range" min="0.5" max="3" step="0.5" class="risk-slider" [(ngModel)]="maxRiskPercent">
-          <span class="input-hint">Khuyến nghị của các huyền thoại trading: Không quá 1% - 2% tài khoản cho mỗi lần vào lệnh</span>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <label class="form-label">Giá Mua Dự Kiến (Entry)</label>
+        <div class="calc-inputs">
+          <div class="form-group">
+            <label class="form-label">Tổng Vốn Tài Khoản Của Bạn (NAV)</label>
             <div class="input-with-suffix">
-              <input type="number" step="100" class="form-control font-mono" [(ngModel)]="entryPrice" (ngModelChange)="updateByPercent()">
+              <input type="number" step="1000000" class="form-control font-mono" [(ngModel)]="accountCapital">
+              <span class="suffix">VNĐ</span>
+            </div>
+            <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+              <button type="button" class="pill pill-primary" style="cursor: pointer; border: none; font-size: 0.75rem;" (click)="setCapital(100000000)">100 Triệu (Gốc)</button>
+              <button type="button" class="pill pill-purple" style="cursor: pointer; border: none; font-size: 0.75rem;" (click)="setCapital(liveNav)">NAV Hiện Tại ({{ liveNav | number:'1.0-0' }} đ)</button>
+              <button type="button" class="pill" style="cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; font-size: 0.75rem;" (click)="setCapital(50000000)">50 Triệu</button>
+              <button type="button" class="pill" style="cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; font-size: 0.75rem;" (click)="setCapital(200000000)">200 Triệu</button>
+            </div>
+            <span class="input-hint">Vốn thực tế bạn sẵn sàng phân bổ vào chứng khoán</span>
+          </div>
+
+          <div class="form-group">
+            <div class="label-with-badge">
+              <label class="form-label">Mức Rủi Ro Tối Đa Cho 1 Deal</label>
+              <span class="pill pill-purple">{{ maxRiskPercent }}% NAV ({{ maxAllowedLossAmount | number:'1.0-0' }} đ)</span>
+            </div>
+            <input type="range" min="0.5" max="3" step="0.5" class="risk-slider" [(ngModel)]="maxRiskPercent">
+            <span class="input-hint">Khuyến nghị của các huyền thoại trading: Không quá 1% - 2% tài khoản cho mỗi lần vào lệnh</span>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label class="form-label">Giá Mua Dự Kiến (Entry)</label>
+              <div class="input-with-suffix">
+                <input type="number" step="100" class="form-control font-mono" [(ngModel)]="entryPrice" (ngModelChange)="updateByPercent()">
+                <span class="suffix">đ</span>
+              </div>
+            </div>
+            <div class="form-group flex-1">
+              <label class="form-label">Giá Cắt Lỗ (Stop Loss -7%)</label>
+              <div class="input-with-suffix">
+                <input type="number" step="100" class="form-control font-mono stock-down" [(ngModel)]="stopLossPrice">
+                <span class="suffix">đ</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Giá Chốt Lời Dự Kiến (Take Profit +15%)</label>
+            <div class="input-with-suffix">
+              <input type="number" step="100" class="form-control font-mono stock-up" [(ngModel)]="takeProfitPrice">
               <span class="suffix">đ</span>
             </div>
           </div>
-          <div class="form-group flex-1">
-            <label class="form-label">Giá Cắt Lỗ (Stop Loss -7%)</label>
-            <div class="input-with-suffix">
-              <input type="number" step="100" class="form-control font-mono stock-down" [(ngModel)]="stopLossPrice">
-              <span class="suffix">đ</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Giá Chốt Lời Dự Kiến (Take Profit +15%)</label>
-          <div class="input-with-suffix">
-            <input type="number" step="100" class="form-control font-mono stock-up" [(ngModel)]="takeProfitPrice">
-            <span class="suffix">đ</span>
-          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Right: Computed Results & Verdict -->
-    <div class="glass-card result-card" [class.result-valid]="isRRAcceptable" [class.result-invalid]="!isRRAcceptable">
-      <div class="card-head">
-        <h2>Kết Quả Định Lượng Cho Lệnh</h2>
-        <span class="verdict-pill" [ngClass]="isRRAcceptable ? 'pill-up' : 'pill-down'">
-          {{ isRRAcceptable ? '✓ ĐẠT CHUẨN VÀO LỆNH' : '✕ RỦI RO CAO - NÊN HỦY' }}
-        </span>
-      </div>
-
-      <div class="shares-highlight">
-        <span class="sh-label">SỐ LƯỢNG CỔ PHIẾU ĐƯỢC PHÉP MUA:</span>
-        <div class="sh-number font-mono">{{ maxSharesToBuy | number }} <span class="sh-unit">cổ phiếu</span></div>
-        <span class="sh-sub">(Đã làm tròn xuống lô chuẩn 100 cp của sàn chứng khoán VN)</span>
-      </div>
-
-      <div class="stats-breakdown">
-        <div class="breakdown-item">
-          <span class="bi-label">Tỷ Lệ Lợi Nhuận / Rủi Ro (R:R):</span>
-          <span class="font-mono font-bold" [ngClass]="isRRAcceptable ? 'stock-up' : 'stock-down'">
-            1 : {{ riskRewardRatio | number:'1.2-2' }}
+      <!-- Right: Computed Results & Verdict -->
+      <div class="glass-card result-card" [class.result-valid]="isRRAcceptable" [class.result-invalid]="!isRRAcceptable">
+        <div class="card-head">
+          <h2>Kết Quả Định Lượng Cho Lệnh</h2>
+          <span class="verdict-pill" [ngClass]="isRRAcceptable ? 'pill-up' : 'pill-down'">
+            {{ isRRAcceptable ? '✓ ĐẠT CHUẨN VÀO LỆNH' : '✕ RỦI RO CAO - NÊN HỦY' }}
           </span>
         </div>
 
-        <div class="breakdown-item">
-          <span class="bi-label">Tổng Vốn Cần Giải Ngân:</span>
-          <span class="font-mono font-bold text-main">{{ totalCapitalRequired | number:'1.0-0' }} đ ({{ allocationPercent | number:'1.1-1' }}% NAV)</span>
+        <div class="shares-highlight">
+          <span class="sh-label">SỐ LƯỢNG CỔ PHIẾU ĐƯỢC PHÉP MUA:</span>
+          <div class="sh-number font-mono">{{ maxSharesToBuy | number }} <span class="sh-unit">cổ phiếu</span></div>
+          <span class="sh-sub">(Đã làm tròn xuống lô chuẩn 100 cp của sàn chứng khoán VN)</span>
         </div>
 
-        <div class="breakdown-item">
-          <span class="bi-label">Khoảng Cách Cắt Lỗ:</span>
-          <span class="font-mono stock-down">-{{ stopLossPercent | number:'1.2-2' }}% (Mất {{ expectedLossAmount | number:'1.0-0' }} đ nếu dính SL)</span>
+        <div class="stats-breakdown">
+          <div class="breakdown-item">
+            <span class="bi-label">Tỷ Lệ Lợi Nhuận / Rủi Ro (R:R):</span>
+            <span class="font-mono font-bold" [ngClass]="isRRAcceptable ? 'stock-up' : 'stock-down'">
+              1 : {{ riskRewardRatio | number:'1.2-2' }}
+            </span>
+          </div>
+
+          <div class="breakdown-item">
+            <span class="bi-label">Tổng Vốn Cần Giải Ngân:</span>
+            <span class="font-mono font-bold text-main">{{ totalCapitalRequired | number:'1.0-0' }} đ ({{ allocationPercent | number:'1.1-1' }}% NAV)</span>
+          </div>
+
+          <div class="breakdown-item">
+            <span class="bi-label">Khoảng Cách Cắt Lỗ:</span>
+            <span class="font-mono stock-down">-{{ stopLossPercent | number:'1.2-2' }}% (Mất {{ expectedLossAmount | number:'1.0-0' }} đ nếu dính SL)</span>
+          </div>
+
+          <div class="breakdown-item">
+            <span class="bi-label">Lợi Nhuận Tiềm Năng:</span>
+            <span class="font-mono stock-up">+{{ takeProfitPercent | number:'1.2-2' }}% (Lãi {{ expectedProfitAmount | number:'1.0-0' }} đ nếu đạt TP)</span>
+          </div>
         </div>
 
-        <div class="breakdown-item">
-          <span class="bi-label">Lợi Nhuận Tiềm Năng:</span>
-          <span class="font-mono stock-up">+{{ takeProfitPercent | number:'1.2-2' }}% (Lãi {{ expectedProfitAmount | number:'1.0-0' }} đ nếu đạt TP)</span>
+        <div class="risk-explanation">
+          <span class="re-icon">🛡️</span>
+          <p>
+            Bằng việc giới hạn rủi ro <strong>{{ maxRiskPercent }}%</strong> (tối đa {{ maxAllowedLossAmount | number:'1.0-0' }} đ),
+            ngay cả khi bạn thua liên tiếp 5 lệnh, tài khoản của bạn vẫn bảo toàn hơn <strong>90% số vốn</strong> để đón sóng lớn!
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drawdown Recovery Table & Real Money Rules -->
+    <div class="bottom-grid">
+      <!-- Drawdown Math -->
+      <div class="glass-card content-card">
+        <div class="card-head">
+          <h2>Toán Học Về Sự Sụt Giảm Vốn (Drawdown Math)</h2>
+          <span class="pill pill-down">Tại Sao Phải Cắt Lỗ 7%?</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Khi Tài Khoản Lỗ</th>
+                <th>Mức Lãi Cần Đạt Để Hòa Vốn</th>
+                <th>Độ Khó Phục Hồi</th>
+                <th>Lời Khuyên</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let d of drawdownData" [class.safe-row]="d.safe" [class.danger-row]="!d.safe">
+                <td class="font-mono font-bold stock-down">-{{ d.loss }}%</td>
+                <td class="font-mono font-bold" [ngClass]="d.safe ? 'stock-up' : 'stock-down'">+{{ d.gainNeeded }}%</td>
+                <td>
+                  <span class="pill" [ngClass]="d.safe ? 'pill-up' : 'pill-down'">
+                    {{ d.safe ? 'Bình thường' : 'Cực kỳ khó' }}
+                  </span>
+                </td>
+                <td class="text-secondary text-sm">{{ d.note }}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div class="risk-explanation">
+      <!-- 5 Rules For Real Money -->
+      <div class="glass-card content-card">
+        <div class="card-head">
+          <h2>5 Nguyên Tắc Bất Biến Khi Chơi Tiền Thật</h2>
+          <span class="pill pill-purple">Dành Cho F0 & Bán Chuyên</span>
+        </div>
+
+        <div class="rules-list">
+          <div class="rule-item">
+            <span class="rule-badge">1</span>
+            <div>
+              <strong>Không bao giờ tất tay vào 1 mã cổ phiếu</strong>
+              <p>Tối đa chia vốn vào 3-4 mã thuộc 2-3 ngành khác nhau để phân tán rủi ro thiên nga đen.</p>
+            </div>
+          </div>
+
+          <div class="rule-item">
+            <span class="rule-badge">2</span>
+            <div>
+              <strong>Nói KHÔNG với Margin (Đòn bẩy tài chính)</strong>
+              <p>Đòn bẩy biến một khoản lỗ bình thường thành cháy tài khoản khi bị Call Margin ép bán ở đáy.</p>
+            </div>
+          </div>
+
+          <div class="rule-item">
+            <span class="rule-badge">3</span>
+            <div>
+              <strong>Không trung bình giá xuống cổ phiếu rớt</strong>
+              <p>Chỉ mua gia tăng khi cổ phiếu đang chạy đúng hướng và đang có lãi.</p>
+            </div>
+          </div>
+
+          <div class="rule-item">
+            <span class="rule-badge">4</span>
+            <div>
+              <strong>Quan sát sau 14h15 trước khi đặt lệnh mua mới</strong>
+              <p>80% biến động thật của chứng khoán Việt Nam diễn ra trong 15 phút cuối phiên và phiên ATC.</p>
+            </div>
+          </div>
+
+          <div class="rule-item">
+            <span class="rule-badge">5</span>
+            <div>
+              <strong>Cắt lỗ trước, chốt lời sau</strong>
+              <p>Đặt trước lệnh Stop Loss ngay khi vừa khớp mua để tâm lý không thể can thiệp trì hoãn.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- TAB 2: AUDIT & HEALTH -->
+  <ng-container *ngIf="activeTab === 'audit'">
+    <!-- Health Overview Cards -->
+    <div class="audit-overview-grid" *ngIf="portfolioHealth">
+      <div class="audit-metric-box">
+        <span class="amb-label">Trạng Thái Sức Khỏe Danh Mục</span>
+        <div class="amb-value font-mono">
+          <span class="pill" [ngClass]="portfolioHealth.status === 'HEALTHY' ? 'pill-up' : (portfolioHealth.status === 'CAUTION' ? 'pill-purple' : 'pill-down')">
+            {{ portfolioHealth.status === 'HEALTHY' ? '🟢 AN TOÀN CAO' : (portfolioHealth.status === 'CAUTION' ? '🟡 THẬN TRỌNG' : '🔴 PHÒNG THỦ') }}
+          </span>
+        </div>
+        <span class="amb-sub">Mở vị thế: {{ portfolioHealth.openPositionsCount }}/{{ portfolioHealth.maxAllowedPositions }} mã tối đa</span>
+      </div>
+
+      <div class="audit-metric-box">
+        <span class="amb-label">Tỷ Trọng Tiền Mặt Phòng Vệ</span>
+        <div class="amb-value font-mono stock-up">{{ portfolioHealth.cashPercent | number:'1.1-1' }}%</div>
+        <div class="progress-track">
+          <div class="progress-bar-cash" [style.width.%]="portfolioHealth.cashPercent"></div>
+          <div class="progress-bar-stock" [style.width.%]="portfolioHealth.investedPercent"></div>
+        </div>
+        <span class="amb-sub">Cổ phiếu: {{ portfolioHealth.investedPercent | number:'1.1-1' }}% NAV</span>
+      </div>
+
+      <div class="audit-metric-box">
+        <span class="amb-label">Anti-Martingale Dynamic Risk</span>
+        <div class="amb-value font-mono text-main">{{ portfolioHealth.recommendedRiskPercent | number:'1.2-2' }}% <span style="font-size: 0.8rem; font-weight: 500;">NAV/deal</span></div>
+        <span class="amb-sub">Trạng thái chuỗi: {{ portfolioHealth.streakStatus }} ({{ portfolioHealth.streakCount }} lệnh)</span>
+      </div>
+
+      <div class="audit-metric-box" *ngIf="realMoneyAudit">
+        <span class="amb-label">Điểm Sẵn Sàng Vốn Thật</span>
+        <div class="amb-value font-mono" [ngClass]="realMoneyAudit.certifiedForRealMoney ? 'stock-up' : 'text-main'">
+          {{ realMoneyAudit.readinessScorePercent }}%
+        </div>
+        <span class="amb-sub">{{ realMoneyAudit.certifiedForRealMoney ? '✓ Đạt chuẩn đánh tiền thật' : '⏳ Cần hoàn thiện tiêu chí' }}</span>
+      </div>
+    </div>
+
+    <!-- Sector Allocation Breakdown & Risk Checklist -->
+    <div class="bottom-grid">
+      <!-- Left: Sector allocations -->
+      <div class="glass-card content-card" *ngIf="portfolioHealth">
+        <div class="card-head">
+          <h2>Phân Bổ Vốn Theo Nhóm Ngành (Trần 35% NAV)</h2>
+          <span class="pill pill-primary">Kiểm Soát Rủi Ro Ngành</span>
+        </div>
+
+        <div style="margin-top: 14px;">
+          <div *ngIf="getSectorEntries().length === 0" class="text-secondary text-sm" style="padding: 12px 0;">
+            Hiện tại tài khoản đang 100% tiền mặt, chưa mở vị thế cổ phiếu nào. Sẵn sàng giải ngân khi có điểm mua đạt chuẩn.
+          </div>
+
+          <div *ngFor="let s of getSectorEntries()" class="sector-bar-row">
+            <span class="sector-label">{{ s.key }}</span>
+            <div class="sector-track">
+              <div class="sector-fill" [class.warning]="s.value > 35" [style.width.%]="s.value"></div>
+            </div>
+            <span class="sector-val font-mono" [class.stock-down]="s.value > 35">{{ s.value | number:'1.1-1' }}%</span>
+          </div>
+
+          <div *ngIf="portfolioHealth.sectorWarnings && portfolioHealth.sectorWarnings.length > 0" style="margin-top: 12px;">
+            <div *ngFor="let w of portfolioHealth.sectorWarnings" class="sc-impact">
+              ⚠️ {{ w }}
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 14px;">
+          <h3 style="font-size: 0.95rem; font-weight: 700; color: #fff; margin-bottom: 10px;">Checklist Kiểm Soát Rủi Ro Hệ Thống:</h3>
+          <div *ngFor="let item of portfolioHealth.riskChecklist" style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px;">
+            {{ item }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Real Money Audit 7 Criteria -->
+      <div class="glass-card content-card" *ngIf="realMoneyAudit">
+        <div class="card-head">
+          <h2>7 Tiêu Chuẩn Kiểm Định Đánh Tiền Thật</h2>
+          <span class="pill" [ngClass]="realMoneyAudit.certifiedForRealMoney ? 'pill-up' : 'pill-purple'">
+            {{ realMoneyAudit.certifiedForRealMoney ? 'ĐỦ ĐIỀU KIỆN TIỀN THẬT' : 'ĐANG FORWARD TEST' }}
+          </span>
+        </div>
+
+        <div class="table-responsive" style="margin-top: 12px;">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Tiêu Chí</th>
+                <th>Yêu Cầu</th>
+                <th>Thực Tế</th>
+                <th>Trạng Thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let c of realMoneyAudit.criteria">
+                <td style="font-weight: 600;">{{ c.name }}</td>
+                <td class="font-mono text-sm text-secondary">{{ c.requiredThreshold }}</td>
+                <td class="font-mono font-bold">{{ c.actualValue }}</td>
+                <td>
+                  <span class="pill" [ngClass]="c.status === 'PASS' ? 'pill-up' : (c.status === 'IN_PROGRESS' ? 'pill-primary' : 'pill-down')">
+                    {{ c.status === 'PASS' ? 'ĐẠT' : (c.status === 'IN_PROGRESS' ? 'ĐANG THEO DÕI' : 'CHƯA ĐẠT') }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="risk-explanation" style="margin-top: 16px;">
+          <span class="re-icon">📋</span>
+          <p>{{ realMoneyAudit.executiveSummary }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Veteran Rules Audit List -->
+    <div class="glass-card content-card" *ngIf="veteranAudit" style="margin-top: 20px;">
+      <div class="card-head">
+        <h2>Kiểm Toán Kỷ Luật Sống Còn Của Già Làng TTCK Việt Nam</h2>
+        <span class="pill pill-up">Điểm Kỷ Luật: {{ veteranAudit.disciplineScore }}/100</span>
+      </div>
+
+      <div class="rules-list" style="margin-top: 14px;">
+        <div *ngFor="let r of veteranAudit.ruleChecks; let i = index" class="rule-item">
+          <span class="rule-badge">{{ i + 1 }}</span>
+          <div style="flex: 1;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 6px;">
+              <strong>{{ r.ruleName }}</strong>
+              <span class="pill" [ngClass]="r.compliant ? 'pill-up' : 'pill-down'">{{ r.statusText }}</span>
+            </div>
+            <p style="margin-bottom: 4px;">{{ r.explanation }}</p>
+            <div style="font-size: 0.76rem; color: var(--accent-primary); font-family: monospace;">
+              🔬 {{ r.quantitativeMetric }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- TAB 3: BLACK SWAN STRESS TEST -->
+  <ng-container *ngIf="activeTab === 'blackswan'">
+    <div class="glass-card content-card" *ngIf="blackSwan" style="margin-bottom: 20px;">
+      <div class="card-head">
+        <h2>Kết Luận Kiểm Tra Chịu Tải Danh Mục Trước Khủng Hoảng</h2>
+        <span class="pill pill-up font-bold">Chống Chịu: {{ blackSwan.overallResilienceScore }}/100 Điểm</span>
+      </div>
+
+      <div class="audit-overview-grid" style="margin-top: 16px;">
+        <div class="audit-metric-box">
+          <span class="amb-label">Vốn Danh Mục Kiểm Tra</span>
+          <div class="amb-value font-mono">{{ blackSwan.portfolioCapital | number:'1.0-0' }} đ</div>
+          <span class="amb-sub">Khớp hoàn toàn với vốn tài khoản thực</span>
+        </div>
+
+        <div class="audit-metric-box">
+          <span class="amb-label">Sụt Giảm Tối Đa (Worst Case DD)</span>
+          <div class="amb-value font-mono stock-down">-{{ blackSwan.worstCaseDrawdownPercent | number:'1.2-2' }}%</div>
+          <span class="amb-sub">Tổn thất tối đa: -{{ blackSwan.worstCaseLossAmount | number:'1.0-0' }} đ</span>
+        </div>
+
+        <div class="audit-metric-box">
+          <span class="amb-label">Đệm Tiền Mặt Phòng Vệ</span>
+          <div class="amb-value font-mono stock-up">{{ blackSwan.recommendedCashBufferPercent | number:'1.1-1' }}% NAV</div>
+          <span class="amb-sub">Giữ tài khoản không bị bán giải chấp</span>
+        </div>
+
+        <div class="audit-metric-box">
+          <span class="amb-label">Phòng Hộ Phái Sinh VN30F1M</span>
+          <div class="amb-value font-mono text-main">Short {{ blackSwan.recommendedVn30FuturesHedgeContracts }} HĐ</div>
+          <span class="amb-sub">Hedge Ratio bảo vệ khi DEFCON kích hoạt</span>
+        </div>
+      </div>
+
+      <div class="risk-explanation" style="margin-top: 12px;">
         <span class="re-icon">🛡️</span>
-        <p>
-          Bằng việc giới hạn rủi ro <strong>{{ maxRiskPercent }}%</strong> (tối đa {{ maxAllowedLossAmount | number:'1.0-0' }} đ),
-          ngay cả khi bạn thua liên tiếp 5 lệnh, tài khoản của bạn vẫn bảo toàn hơn <strong>90% số vốn</strong> để đón sóng lớn!
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <!-- Drawdown Recovery Table & Real Money Rules -->
-  <div class="bottom-grid">
-    <!-- Drawdown Math -->
-    <div class="glass-card content-card">
-      <div class="card-head">
-        <h2>Toán Học Về Sự Sụt Giảm Vốn (Drawdown Math)</h2>
-        <span class="pill pill-down">Tại Sao Phải Cắt Lỗ 7%?</span>
-      </div>
-
-      <div class="table-responsive">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Khi Tài Khoản Lỗ</th>
-              <th>Mức Lãi Cần Đạt Để Hòa Vốn</th>
-              <th>Độ Khó Phục Hồi</th>
-              <th>Lời Khuyên</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let d of drawdownData" [class.safe-row]="d.safe" [class.danger-row]="!d.safe">
-              <td class="font-mono font-bold stock-down">-{{ d.loss }}%</td>
-              <td class="font-mono font-bold" [ngClass]="d.safe ? 'stock-up' : 'stock-down'">+{{ d.gainNeeded }}%</td>
-              <td>
-                <span class="pill" [ngClass]="d.safe ? 'pill-up' : 'pill-down'">
-                  {{ d.safe ? 'Bình thường' : 'Cực kỳ khó' }}
-                </span>
-              </td>
-              <td class="text-secondary text-sm">{{ d.note }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <p>{{ blackSwan.institutionalStressVerdict }}</p>
       </div>
     </div>
 
-    <!-- 5 Rules For Real Money -->
-    <div class="glass-card content-card">
-      <div class="card-head">
-        <h2>5 Nguyên Tắc Bất Biến Khi Chơi Tiền Thật</h2>
-        <span class="pill pill-purple">Dành Cho F0 & Bán Chuyên</span>
-      </div>
+    <!-- 4 Scenarios Cards Grid -->
+    <div class="blackswan-grid" *ngIf="blackSwan">
+      <div *ngFor="let sc of blackSwan.scenarioResults" class="scenario-card"
+           [class.survived-healthy]="sc.survivalStatus === 'SURVIVED_HEALTHY'"
+           [class.survived-drawdown]="sc.survivalStatus === 'SURVIVED_DRAWDOWN'"
+           [class.margin-call-risk]="sc.survivalStatus === 'MARGIN_CALL_RISK' || sc.survivalStatus === 'INSOLVENCY_CRITICAL'">
+        <div class="sc-header">
+          <span class="sc-title">{{ sc.scenarioName }}</span>
+          <span class="pill" [ngClass]="sc.survivalStatus === 'SURVIVED_HEALTHY' ? 'pill-up' : (sc.survivalStatus === 'SURVIVED_DRAWDOWN' ? 'pill-purple' : 'pill-down')">
+            {{ sc.survivalStatus === 'SURVIVED_HEALTHY' ? 'AN TOÀN TUYỆT ĐỐI' : (sc.survivalStatus === 'SURVIVED_DRAWDOWN' ? 'SỤT GIẢM KIỂM SOÁT' : 'NGUY CƠ CALL MARGIN') }}
+          </span>
+        </div>
 
-      <div class="rules-list">
-        <div class="rule-item">
-          <span class="rule-badge">1</span>
-          <div>
-            <strong>Không bao giờ tất tay vào 1 mã cổ phiếu</strong>
-            <p>Tối đa chia vốn vào 3-4 mã thuộc 2-3 ngành khác nhau để phân tán rủi ro thiên nga đen.</p>
+        <p class="sc-desc">{{ sc.historicalEventDescription }}</p>
+
+        <div class="sc-metrics">
+          <div class="scm-item">
+            <span class="scm-label">Thị trường giảm:</span>
+            <span class="scm-val font-mono stock-down">-{{ sc.marketShockPercent | number:'1.1-1' }}%</span>
+          </div>
+          <div class="scm-item">
+            <span class="scm-label">Danh mục Bot chịu:</span>
+            <span class="scm-val font-mono stock-down">-{{ sc.portfolioLossPercent | number:'1.2-2' }}%</span>
+          </div>
+          <div class="scm-item">
+            <span class="scm-label">Số tiền tổn thất:</span>
+            <span class="scm-val font-mono stock-down">-{{ sc.portfolioLossVnd | number:'1.0-0' }} đ</span>
+          </div>
+          <div class="scm-item">
+            <span class="scm-label">Vốn còn lại:</span>
+            <span class="scm-val font-mono stock-up">{{ sc.capitalAfterShock | number:'1.0-0' }} đ</span>
           </div>
         </div>
 
-        <div class="rule-item">
-          <span class="rule-badge">2</span>
-          <div>
-            <strong>Nói KHÔNG với Margin (Đòn bẩy tài chính)</strong>
-            <p>Đòn bẩy biến một khoản lỗ bình thường thành cháy tài khoản khi bị Call Margin ép bán ở đáy.</p>
-          </div>
-        </div>
-
-        <div class="rule-item">
-          <span class="rule-badge">3</span>
-          <div>
-            <strong>Không trung bình giá xuống cổ phiếu rớt</strong>
-            <p>Chỉ mua gia tăng khi cổ phiếu đang chạy đúng hướng và đang có lãi.</p>
-          </div>
-        </div>
-
-        <div class="rule-item">
-          <span class="rule-badge">4</span>
-          <div>
-            <strong>Quan sát sau 14h15 trước khi đặt lệnh mua mới</strong>
-            <p>80% biến động thật của chứng khoán Việt Nam diễn ra trong 15 phút cuối phiên và phiên ATC.</p>
-          </div>
-        </div>
-
-        <div class="rule-item">
-          <span class="rule-badge">5</span>
-          <div>
-            <strong>Cắt lỗ trước, chốt lời sau</strong>
-            <p>Đặt trước lệnh Stop Loss ngay khi vừa khớp mua để tâm lý không thể can thiệp trì hoãn.</p>
-          </div>
+        <div class="sc-impact">
+          ⏳ <strong>Thanh khoản T+2.5:</strong> {{ sc.t25LiquidityFreezeImpact }}
         </div>
       </div>
     </div>
-  </div>
+  </ng-container>
 </div>

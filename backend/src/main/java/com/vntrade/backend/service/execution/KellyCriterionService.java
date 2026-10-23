@@ -30,7 +30,7 @@ public class KellyCriterionService {
             : BigDecimal.valueOf(50000);
         BigDecimal nav = capital != null && capital.compareTo(BigDecimal.ZERO) > 0
             ? capital
-            : BigDecimal.valueOf(200_000_000);
+            : BigDecimal.valueOf(100_000_000);
 
         // 1. Lấy dữ liệu Win Rate và Payoff Ratio từ Backtest Định Chế chuẩn T+2.5
         double p = 0.65;

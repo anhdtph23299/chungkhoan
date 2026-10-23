@@ -1,13 +1,15 @@
 .risk-container {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 .risk-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .page-title {
@@ -21,6 +23,42 @@
   font-size: 0.9rem;
   color: var(--text-secondary);
   margin-top: 4px;
+}
+
+/* Tabs switcher */
+.risk-tabs-bar {
+  display: flex;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.risk-tab-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+  }
+
+  &.active {
+    background: linear-gradient(135deg, rgba(0, 242, 254, 0.15), rgba(79, 172, 254, 0.25));
+    border-color: var(--accent-primary);
+    color: #fff;
+    box-shadow: 0 0 15px rgba(0, 242, 254, 0.2);
+  }
 }
 
 /* Calculator Grid */
@@ -261,4 +299,192 @@
   font-size: 0.8rem;
   color: var(--text-secondary);
   line-height: 1.4;
+}
+
+/* Health & Audit Styles */
+.audit-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.audit-metric-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.amb-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.amb-value {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.amb-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.progress-track {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  display: flex;
+  margin: 6px 0;
+}
+
+.progress-bar-cash {
+  height: 100%;
+  background: #00e676;
+}
+
+.progress-bar-stock {
+  height: 100%;
+  background: #00f2fe;
+}
+
+.sector-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.sector-label {
+  width: 140px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sector-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.sector-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4facfe, #00f2fe);
+  border-radius: 999px;
+
+  &.warning {
+    background: #ff5252;
+  }
+}
+
+.sector-val {
+  width: 60px;
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* Black Swan Scenario Cards */
+.blackswan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.scenario-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: rgba(0, 242, 254, 0.3);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  &.survived-healthy {
+    border-left: 4px solid #00e676;
+  }
+
+  &.survived-drawdown {
+    border-left: 4px solid #ffb300;
+  }
+
+  &.margin-call-risk {
+    border-left: 4px solid #ff5252;
+  }
+}
+
+.sc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.sc-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.sc-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.sc-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.scm-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scm-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.scm-val {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.sc-impact {
+  font-size: 0.78rem;
+  color: #ffb300;
+  background: rgba(255, 179, 0, 0.08);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 179, 0, 0.2);
 }

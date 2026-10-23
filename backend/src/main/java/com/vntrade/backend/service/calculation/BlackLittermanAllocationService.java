@@ -31,7 +31,7 @@ public class BlackLittermanAllocationService {
     public BlackLittermanAllocationDto calculateBlackLittermanAllocation(BigDecimal customNav) {
         BigDecimal nav = customNav != null && customNav.compareTo(BigDecimal.ZERO) > 0
             ? customNav
-            : BigDecimal.valueOf(300_000_000);
+            : BigDecimal.valueOf(100_000_000);
 
         double delta = 2.50; // Hệ số ngại rủi ro thị trường chuẩn (Market Risk Aversion)
         double tau = 0.05;   // Hệ số không chắc chắn của ma trận hiệp phương sai

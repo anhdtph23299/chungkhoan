@@ -34,7 +34,7 @@ public class TargetVolatilityScalingService {
     public TargetVolatilityScalingDto calculateTargetVolatilityScaling(BigDecimal customNav, Double customTargetVol) {
         BigDecimal nav = customNav != null && customNav.compareTo(BigDecimal.ZERO) > 0
             ? customNav
-            : BigDecimal.valueOf(300_000_000);
+            : BigDecimal.valueOf(100_000_000);
 
         double targetVol = customTargetVol != null && customTargetVol > 0 ? customTargetVol : 15.0; // 15% / năm
 

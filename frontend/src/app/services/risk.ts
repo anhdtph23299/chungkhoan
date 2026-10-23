@@ -18,11 +18,66 @@ export interface VeteranDisciplineAudit {
   ruleChecks: DisciplineRuleCheck[];
 }
 
-export interface RealMoneyAudit {
-  systemVerdict: string;
-  readyForRealCapital: boolean;
-  readinessScore: number;
-  checklist: any[];
+export interface RealMoneyAuditCriterion {
+  name: string;
+  requiredThreshold: string;
+  actualValue: string;
+  status: 'PASS' | 'IN_PROGRESS' | 'WARNING';
+  notes: string;
+}
+
+export interface RealMoneyAuditDto {
+  certifiedForRealMoney: boolean;
+  readinessScorePercent: number;
+  executiveSummary: string;
+  currentNav: number;
+  netProfitToDate: number;
+  winRate: number;
+  profitFactor: number;
+  mathematicalExpectancy: number;
+  maxDrawdownPercent: number;
+  criteria: RealMoneyAuditCriterion[];
+  recommendedNextSteps: string[];
+}
+
+export interface StressScenarioDetail {
+  scenarioId: string;
+  scenarioName: string;
+  historicalEventDescription: string;
+  marketShockPercent: number;
+  portfolioLossPercent: number;
+  portfolioLossVnd: number;
+  capitalAfterShock: number;
+  t25LiquidityFreezeImpact: string;
+  survivalStatus: string;
+}
+
+export interface BlackSwanStressScenario {
+  portfolioCapital: number;
+  overallResilienceScore: number;
+  worstCaseDrawdownPercent: number;
+  worstCaseLossAmount: number;
+  marginCallTriggered: boolean;
+  recommendedCashBufferPercent: number;
+  recommendedVn30FuturesHedgeContracts: number;
+  institutionalStressVerdict: string;
+  scenarioResults: StressScenarioDetail[];
+}
+
+export interface PortfolioHealthReport {
+  status: string;
+  currentNav: number;
+  cashPercent: number;
+  investedPercent: number;
+  openPositionsCount: number;
+  maxAllowedPositions: number;
+  sectorAllocations: { [key: string]: number };
+  sectorWarnings: string[];
+  streakStatus: string;
+  streakCount: number;
+  recommendedRiskPercent: number;
+  allowNewPurchases: boolean;
+  riskChecklist: string[];
 }
 
 @Injectable({ providedIn: 'root' })
@@ -35,11 +90,16 @@ export class RiskService {
     return this.http.get<VeteranDisciplineAudit>(`${this.baseUrl}/veteran-discipline-audit`);
   }
 
-  getRealMoneyAudit(): Observable<RealMoneyAudit> {
-    return this.http.get<RealMoneyAudit>(`${this.baseUrl}/real-money-audit`);
+  getRealMoneyAudit(): Observable<RealMoneyAuditDto> {
+    return this.http.get<RealMoneyAuditDto>(`${this.baseUrl}/real-money-audit`);
   }
 
-  getPortfolioHealth(): Observable<any> {
-    return this.http.get<any>(`${this.baseUrl}/portfolio-health`);
+  getPortfolioHealth(): Observable<PortfolioHealthReport> {
+    return this.http.get<PortfolioHealthReport>(`${this.baseUrl}/portfolio-health`);
+  }
+
+  getBlackSwanStress(capital?: number): Observable<BlackSwanStressScenario> {
+    const url = capital ? `${this.baseUrl}/black-swan-stress?capital=${capital}` : `${this.baseUrl}/black-swan-stress`;
+    return this.http.get<BlackSwanStressScenario>(url);
   }
 }

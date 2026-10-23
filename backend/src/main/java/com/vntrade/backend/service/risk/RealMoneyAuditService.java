@@ -28,11 +28,14 @@ public class RealMoneyAuditService {
         List<PortfolioSnapshot> snapshots = snapshotRepository.findAllByOrderBySnapshotTimeAsc();
 
         BigDecimal currentNav = snapshots.isEmpty()
-            ? BigDecimal.valueOf(200_000_000)
+            ? BigDecimal.valueOf(100_000_000)
             : snapshots.get(snapshots.size() - 1).getTotalNav();
 
         // Tính Maximum Drawdown (MDD) từ equity snapshots
-        BigDecimal peakNav = BigDecimal.valueOf(200_000_000);
+        BigDecimal peakNav = snapshots.isEmpty() ? currentNav : snapshots.get(0).getTotalNav();
+        if (peakNav.compareTo(BigDecimal.valueOf(100_000_000)) < 0) {
+            peakNav = BigDecimal.valueOf(100_000_000);
+        }
         BigDecimal maxDrawdown = BigDecimal.ZERO;
 
         for (PortfolioSnapshot s : snapshots) {
