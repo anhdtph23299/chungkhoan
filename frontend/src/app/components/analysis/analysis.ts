@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { TradeService, Trade } from '../../services/trade';
+import { AnalysisService, BackendStockScanResult, VcpPattern } from '../../services/analysis';
 
 export interface TechnicalScanItem {
   symbol: string;
@@ -15,7 +16,7 @@ export interface TechnicalScanItem {
   ma20: number;
   ma50: number;
   volumeRatio: number; // vs MA20 vol
-  signalType: 'BREAKOUT_VOL' | 'RSI_OVERSOLD' | 'GOLDEN_CROSS' | 'WARNING_BEAR';
+  signalType: string;
   signalTitle: string;
   buyZone: string;
   stopLoss: number;
@@ -33,109 +34,114 @@ export interface TechnicalScanItem {
 export class AnalysisComponent implements OnInit {
   selectedSymbol = 'FPT';
   activeFilter = 'ALL';
+  activeSubtab: 'scanner' | 'vcp' = 'scanner';
+  isLoadingScan = false;
+  isLoadingVcp = false;
+
+  vcpPatterns: VcpPattern[] = [];
 
   scannedStocks: TechnicalScanItem[] = [
     {
       symbol: 'FPT',
       name: 'Tập đoàn FPT',
       exchange: 'HOSE',
-      price: 141000,
-      changePercent: 2.55,
-      rsi: 58.5,
-      ma20: 136200,
-      ma50: 130500,
-      volumeRatio: 1.82,
+      price: 57000,
+      changePercent: -0.70,
+      rsi: 30.7,
+      ma20: 59365,
+      ma50: 62892,
+      volumeRatio: 1.25,
+      signalType: 'RSI_OVERSOLD',
+      signalTitle: 'Quá bán kỹ thuật RSI 30.7, chạm hỗ trợ cứng',
+      buyZone: '56,100 - 57,000',
+      stopLoss: 54900,
+      target: 61600,
+      status: 'BUY'
+    },
+    {
+      symbol: 'DCM',
+      name: 'Đạm Cà Mau',
+      exchange: 'HOSE',
+      price: 35500,
+      changePercent: 0.71,
+      rsi: 62.6,
+      ma20: 34085,
+      ma50: 32950,
+      volumeRatio: 1.22,
       signalType: 'BREAKOUT_VOL',
-      signalTitle: 'Vượt đỉnh 52 tuần với thanh khoản tăng 1.8x MA20',
-      buyZone: '138,000 - 141,000',
-      stopLoss: 131000,
-      target: 160000,
+      signalTitle: 'MACD phân kỳ dương hướng lên, cản 35,650 đ',
+      buyZone: '34,950 - 35,500',
+      stopLoss: 34100,
+      target: 38600,
+      status: 'STRONG_BUY'
+    },
+    {
+      symbol: 'GMD',
+      name: 'Gemadept',
+      exchange: 'HOSE',
+      price: 57100,
+      changePercent: -0.70,
+      rsi: 70.8,
+      ma20: 53580,
+      ma50: 52370,
+      volumeRatio: 1.25,
+      signalType: 'BREAKOUT_VOL',
+      signalTitle: 'Dòng tiền Big Boys tích lũy mạnh, EMA20 dốc lên',
+      buyZone: '56,200 - 57,100',
+      stopLoss: 54900,
+      target: 61900,
+      status: 'STRONG_BUY'
+    },
+    {
+      symbol: 'BCM',
+      name: 'Becamex IDC',
+      exchange: 'HOSE',
+      price: 41650,
+      changePercent: 2.08,
+      rsi: 62.1,
+      ma20: 39207,
+      ma50: 40659,
+      volumeRatio: 2.39,
+      signalType: 'BREAKOUT_VOL',
+      signalTitle: 'Bùng nổ vượt kháng cự với Volume tăng 2.39x MA20',
+      buyZone: '41,050 - 41,650',
+      stopLoss: 39700,
+      target: 46000,
       status: 'STRONG_BUY'
     },
     {
       symbol: 'HPG',
       name: 'Tập đoàn Hòa Phát',
       exchange: 'HOSE',
-      price: 29800,
-      changePercent: 2.05,
+      price: 20950,
+      changePercent: -0.48,
       rsi: 54.2,
-      ma20: 28900,
-      ma50: 28100,
-      volumeRatio: 1.65,
+      ma20: 21200,
+      ma50: 21800,
+      volumeRatio: 1.15,
       signalType: 'GOLDEN_CROSS',
-      signalTitle: 'MA20 cắt lên MA50 xác nhận xu hướng tăng trung hạn',
-      buyZone: '29,200 - 29,800',
-      stopLoss: 27500,
-      target: 34500,
+      signalTitle: 'Tích lũy nền giá chặt chẽ quanh ngưỡng hỗ trợ',
+      buyZone: '20,500 - 21,000',
+      stopLoss: 19500,
+      target: 24000,
       status: 'BUY'
-    },
-    {
-      symbol: 'SSI',
-      name: 'Chứng khoán SSI',
-      exchange: 'HOSE',
-      price: 35000,
-      changePercent: 3.24,
-      rsi: 62.1,
-      ma20: 33800,
-      ma50: 32900,
-      volumeRatio: 1.95,
-      signalType: 'BREAKOUT_VOL',
-      signalTitle: 'Breakout mẫu hình tích lũy kèm sóng ngành KRX',
-      buyZone: '34,200 - 35,000',
-      stopLoss: 32500,
-      target: 40500,
-      status: 'STRONG_BUY'
     },
     {
       symbol: 'TCB',
       name: 'Techcombank',
       exchange: 'HOSE',
-      price: 24600,
-      changePercent: 1.86,
-      rsi: 51.0,
-      ma20: 24100,
-      ma50: 23600,
+      price: 34200,
+      changePercent: 0.15,
+      rsi: 58.0,
+      ma20: 33800,
+      ma50: 32900,
       volumeRatio: 1.35,
       signalType: 'GOLDEN_CROSS',
       signalTitle: 'Duy trì kênh tăng giá trên đường hỗ trợ MA20',
-      buyZone: '24,000 - 24,600',
-      stopLoss: 22800,
-      target: 28500,
+      buyZone: '33,800 - 34,200',
+      stopLoss: 32500,
+      target: 38500,
       status: 'BUY'
-    },
-    {
-      symbol: 'MWG',
-      name: 'Thế Giới Di Động',
-      exchange: 'HOSE',
-      price: 68500,
-      changePercent: -0.58,
-      rsi: 48.0,
-      ma20: 69200,
-      ma50: 66800,
-      volumeRatio: 0.85,
-      signalType: 'RSI_OVERSOLD',
-      signalTitle: 'Đang tích lũy chặt quanh MA20, thanh khoản cạn kiệt',
-      buyZone: '67,500 - 68,500',
-      stopLoss: 63700,
-      target: 78000,
-      status: 'WATCH'
-    },
-    {
-      symbol: 'VHM',
-      name: 'Vinhomes',
-      exchange: 'HOSE',
-      price: 42300,
-      changePercent: -0.47,
-      rsi: 38.5,
-      ma20: 43100,
-      ma50: 42000,
-      volumeRatio: 1.1,
-      signalType: 'WARNING_BEAR',
-      signalTitle: 'Dưới MA20, rủi ro nợ vay, chạm hỗ trợ tâm lý 42.0',
-      buyZone: 'Chờ tạo đáy 2',
-      stopLoss: 39500,
-      target: 46000,
-      status: 'RISK'
     }
   ];
 
@@ -144,12 +150,90 @@ export class AnalysisComponent implements OnInit {
   constructor(
     private sanitizer: DomSanitizer,
     private tradeService: TradeService,
+    private analysisService: AnalysisService,
     private router: Router,
     private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
     this.filterSignals('ALL');
+    this.loadRealAnalysisScan();
+    this.loadVcpPatterns();
+  }
+
+  loadRealAnalysisScan(): void {
+    this.isLoadingScan = true;
+    this.analysisService.scanStocks('ALL').subscribe({
+      next: (results) => {
+        if (results && results.length > 0) {
+          const mapped: TechnicalScanItem[] = results.map(r => {
+            let status: 'STRONG_BUY' | 'BUY' | 'WATCH' | 'RISK' = 'WATCH';
+            if (r.action === 'STRONG_BUY') status = 'STRONG_BUY';
+            else if (r.action === 'BUY') status = 'BUY';
+            else if (r.action === 'AVOID') status = 'RISK';
+
+            let sigType = r.signalType || 'BREAKOUT_VOL';
+            if (sigType === 'MACD_GOLDEN_CROSS' || sigType === 'PULLBACK_MA20') sigType = 'GOLDEN_CROSS';
+            if (sigType === 'OVERSOLD' || sigType === 'OVERSOLD_BOUNCE') sigType = 'RSI_OVERSOLD';
+            if (sigType === 'WARNING_BEAR' || r.action === 'AVOID') sigType = 'WARNING_BEAR';
+
+            return {
+              symbol: r.symbol,
+              name: r.name || ('Cổ phiếu ' + r.symbol),
+              exchange: r.exchange || 'HOSE',
+              price: r.price,
+              changePercent: r.changePercent,
+              rsi: r.rsi,
+              ma20: r.ma20,
+              ma50: r.ma50,
+              volumeRatio: r.volumeRatio,
+              signalType: sigType,
+              signalTitle: r.signalTitle,
+              buyZone: r.buyZone,
+              stopLoss: r.stopLoss,
+              target: r.targetPrice,
+              status
+            };
+          });
+
+          // Sort by highest confidence/status
+          this.scannedStocks = mapped;
+          this.filterSignals(this.activeFilter);
+        }
+        this.isLoadingScan = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.isLoadingScan = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  loadVcpPatterns(): void {
+    this.isLoadingVcp = true;
+    this.analysisService.scanVcp().subscribe({
+      next: (patterns) => {
+        this.vcpPatterns = patterns || [];
+        this.isLoadingVcp = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.isLoadingVcp = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  setSubtab(tab: 'scanner' | 'vcp'): void {
+    this.activeSubtab = tab;
+    this.cdr.markForCheck();
+  }
+
+  selectVcpCandidate(symbol: string): void {
+    this.selectedSymbol = symbol;
+    this.activeSubtab = 'scanner';
+    this.cdr.markForCheck();
   }
 
   get currentStock(): TechnicalScanItem {
@@ -158,7 +242,6 @@ export class AnalysisComponent implements OnInit {
 
   get tradingViewWidgetUrl(): SafeResourceUrl {
     const symbolCode = `HOSE:${this.selectedSymbol}`;
-    // TradingView Advanced Chart embed URL
     const url = `https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=${symbolCode}&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=%5B%22MASimple%40tv-basicstudies%22%2C%22RSI%40tv-basicstudies%22%5D&theme=dark&style=1&timezone=Asia%2FHo_Chi_Minh&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&locale=vi_VN&utm_source=localhost`;
     return this.sanitizer.bypassSecurityTrustResourceUrl(url);
   }
