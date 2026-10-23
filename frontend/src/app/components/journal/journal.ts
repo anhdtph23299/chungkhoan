@@ -59,21 +59,7 @@ export class JournalComponent implements OnInit {
       next: (trades) => {
         const closed = trades.filter(t => t.status?.toLowerCase() === 'closed');
         if (closed && closed.length > 0) {
-          this.entries = closed.map(t => ({
-            id: t.id,
-            symbol: t.symbol,
-            tradeDate: t.tradeDate,
-            closeDate: t.closeDate || t.tradeDate,
-            type: t.type?.toUpperCase() || 'BUY',
-            buyPrice: t.price,
-            sellPrice: t.closePrice || t.price,
-            quantity: t.closeQuantity || t.quantity,
-            pnl: t.pnl || 0,
-            pnlPercent: t.pnlPercent || 0,
-            strategy: t.strategy || 'T1 Core Breakout',
-            psychology: t.notes || 'Bình tĩnh, tuân thủ kỷ luật',
-            lessonLearned: t.reason || 'Kỷ luật thoát T1'
-          }));
+          this.entries = closed.map(t => this.mapTradeToJournal(t));
           this.applyFilter();
         } else {
           this.initMockJournal();
@@ -85,6 +71,46 @@ export class JournalComponent implements OnInit {
         this.cdr.markForCheck();
       }
     });
+  }
+
+  private mapTradeToJournal(t: Trade): JournalEntry {
+    const isWin = (t.pnl || 0) > 0;
+    let strategy = t.strategy || 'T1 Core Breakout';
+    if (strategy === 'T1_BREAKOUT_TREND_CORE') {
+      strategy = 'T1 Breakout & Trend (DEFCON-1)';
+    }
+
+    let psychology = t.notes || '';
+    if (!psychology || psychology.includes('??') || psychology.includes('Ch?t l?i')) {
+      psychology = isWin
+        ? 'Tâm lý kiên định, tuân thủ kỷ luật chốt lời kế hoạch và chủ động khóa lợi nhuận trước kỳ nghỉ cuối tuần.'
+        : 'Chấp nhận chi phí rủi ro thị trường, cắt lỗ dứt khoát không do dự, tuân thủ nguyên tắc bảo toàn vốn.';
+    }
+
+    let lessonLearned = t.reason || '';
+    if (!lessonLearned || lessonLearned.includes('??') || lessonLearned.includes('Shadow Audit') || lessonLearned.includes('bo v?')) {
+      if (isWin) {
+        lessonLearned = `Chốt lời kỷ luật đạt +${t.pnlPercent || 0}%: Quản trị vị thế theo sóng dòng tiền và bảo toàn lợi nhuận trước kỳ nghỉ cuối tuần.`;
+      } else {
+        lessonLearned = `Cắt lỗ phòng thủ DEFCON-1 (${t.pnlPercent || 0}%): Thị trường suy yếu chung, việc cắt lỗ sớm giữ mức drawdown < 7% là chìa khóa sống còn.`;
+      }
+    }
+
+    return {
+      id: t.id,
+      symbol: t.symbol,
+      tradeDate: t.tradeDate,
+      closeDate: t.closeDate || t.tradeDate,
+      type: t.type?.toUpperCase() || 'BUY',
+      buyPrice: t.price,
+      sellPrice: t.closePrice || t.price,
+      quantity: t.closeQuantity || t.quantity,
+      pnl: t.pnl || 0,
+      pnlPercent: t.pnlPercent || 0,
+      strategy,
+      psychology,
+      lessonLearned
+    };
   }
 
   initMockJournal(): void {
@@ -173,6 +199,12 @@ export class JournalComponent implements OnInit {
     const totalWin = this.entries.filter(e => e.pnl > 0).reduce((sum, e) => sum + e.pnl, 0);
     const totalLoss = Math.abs(this.entries.filter(e => e.pnl < 0).reduce((sum, e) => sum + e.pnl, 0));
     return totalLoss > 0 ? totalWin / totalLoss : totalWin > 0 ? 99 : 0;
+  }
+
+  get disciplineRate(): number {
+    if (this.entries.length === 0) return 100;
+    const severeLossCount = this.entries.filter(e => e.pnlPercent < -7.5).length;
+    return Math.round(((this.entries.length - severeLossCount) / this.entries.length) * 100);
   }
 
   applyFilter(): void {
