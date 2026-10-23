@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TradeService, Trade } from '../../services/trade';
@@ -45,7 +45,10 @@ export class JournalComponent implements OnInit {
     lessonLearned: ''
   };
 
-  constructor(private tradeService: TradeService) {}
+  constructor(
+    private tradeService: TradeService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.loadJournal();
@@ -54,29 +57,33 @@ export class JournalComponent implements OnInit {
   loadJournal(): void {
     this.tradeService.getAllTrades().subscribe({
       next: (trades) => {
-        const closed = trades.filter(t => t.status === 'CLOSED');
+        const closed = trades.filter(t => t.status?.toLowerCase() === 'closed');
         if (closed && closed.length > 0) {
           this.entries = closed.map(t => ({
             id: t.id,
             symbol: t.symbol,
             tradeDate: t.tradeDate,
             closeDate: t.closeDate || t.tradeDate,
-            type: t.type,
+            type: t.type?.toUpperCase() || 'BUY',
             buyPrice: t.price,
             sellPrice: t.closePrice || t.price,
             quantity: t.closeQuantity || t.quantity,
             pnl: t.pnl || 0,
             pnlPercent: t.pnlPercent || 0,
-            strategy: t.strategy || 'Breakout',
+            strategy: t.strategy || 'T1 Core Breakout',
             psychology: t.notes || 'Bình tĩnh, tuân thủ kỷ luật',
-            lessonLearned: t.reason || 'Kỷ luật chốt lời đúng hạn'
+            lessonLearned: t.reason || 'Kỷ luật thoát T1'
           }));
           this.applyFilter();
         } else {
           this.initMockJournal();
         }
+        this.cdr.markForCheck();
       },
-      error: () => this.initMockJournal()
+      error: () => {
+        this.initMockJournal();
+        this.cdr.markForCheck();
+      }
     });
   }
 

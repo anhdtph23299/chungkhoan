@@ -23,6 +23,12 @@
             <input type="number" step="1000000" class="form-control font-mono" [(ngModel)]="accountCapital">
             <span class="suffix">VNĐ</span>
           </div>
+          <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+            <button type="button" class="pill pill-primary" style="cursor: pointer; border: none; font-size: 0.75rem;" (click)="setCapital(100000000)">100 Triệu (Vốn Gốc)</button>
+            <button type="button" class="pill pill-purple" style="cursor: pointer; border: none; font-size: 0.75rem;" (click)="setCapital(liveNav)">NAV Hiện Tại ({{ liveNav | number:'1.0-0' }} đ)</button>
+            <button type="button" class="pill" style="cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; font-size: 0.75rem;" (click)="setCapital(50000000)">50 Triệu</button>
+            <button type="button" class="pill" style="cursor: pointer; border: 1px solid rgba(255,255,255,0.2); background: transparent; font-size: 0.75rem;" (click)="setCapital(200000000)">200 Triệu</button>
+          </div>
           <span class="input-hint">Vốn thực tế bạn sẵn sàng phân bổ vào chứng khoán</span>
         </div>
 

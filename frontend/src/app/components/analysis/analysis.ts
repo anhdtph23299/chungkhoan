@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -144,7 +144,8 @@ export class AnalysisComponent implements OnInit {
   constructor(
     private sanitizer: DomSanitizer,
     private tradeService: TradeService,
-    private router: Router
+    private router: Router,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -164,6 +165,7 @@ export class AnalysisComponent implements OnInit {
 
   selectSymbol(symbol: string): void {
     this.selectedSymbol = symbol;
+    this.cdr.markForCheck();
   }
 
   filterSignals(type: string): void {
@@ -173,6 +175,7 @@ export class AnalysisComponent implements OnInit {
     } else {
       this.filteredStocks = this.scannedStocks.filter(s => s.signalType === type);
     }
+    this.cdr.markForCheck();
   }
 
   openOrderForCurrent(): void {
@@ -189,7 +192,7 @@ export class AnalysisComponent implements OnInit {
       stopLoss: stock.stopLoss,
       takeProfit: stock.target,
       reason: `Phân tích kỹ thuật: ${stock.signalTitle}`,
-      status: 'OPEN'
+      status: 'open'
     };
 
     this.tradeService.createTrade(tradeData).subscribe({

@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -66,7 +66,8 @@ export class WatchlistComponent implements OnInit {
     private watchlistService: WatchlistService,
     private stockService: StockService,
     private tradeService: TradeService,
-    private router: Router
+    private router: Router,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit(): void {
@@ -81,8 +82,12 @@ export class WatchlistComponent implements OnInit {
         } else {
           this.loadDefaultStocks();
         }
+        this.cdr.markForCheck();
       },
-      error: () => this.loadDefaultStocks()
+      error: () => {
+        this.loadDefaultStocks();
+        this.cdr.markForCheck();
+      }
     });
   }
 
@@ -242,6 +247,7 @@ export class WatchlistComponent implements OnInit {
       res = res.filter(i => i.symbol.includes(q) || i.notes.toUpperCase().includes(q));
     }
     this.filteredItems = res;
+    this.cdr.markForCheck();
   }
 
   openAddModal(): void {

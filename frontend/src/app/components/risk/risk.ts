@@ -1,6 +1,7 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { BotService } from '../../services/bot';
 
 @Component({
   selector: 'app-risk',
@@ -11,11 +12,12 @@ import { FormsModule } from '@angular/forms';
 })
 export class RiskComponent implements OnInit {
   // Calculator inputs
-  accountCapital = 200000000; // 200 triệu
-  maxRiskPercent = 2.0;       // 2% rủi ro tối đa cho 1 deal
+  accountCapital = 100000000; // Mặc định 100 triệu theo tài khoản Bot thực tế
+  maxRiskPercent = 1.5;       // 1.5% rủi ro tối đa theo chiến lược T1 Core
   entryPrice = 35000;         // Giá mua
   stopLossPrice = 32550;      // -7%
   takeProfitPrice = 40250;    // +15%
+  liveNav = 97655312;
 
   // Drawdown math table
   drawdownData = [
@@ -27,8 +29,33 @@ export class RiskComponent implements OnInit {
     { loss: 50, gainNeeded: 100.0, safe: false, note: 'Cần lãi x2 mới về bờ (Cực kỳ nguy hiểm)' }
   ];
 
+  constructor(
+    private botService: BotService,
+    private cdr: ChangeDetectorRef
+  ) {}
+
   ngOnInit(): void {
     this.updateByPercent();
+    this.botService.getBotStatus().subscribe({
+      next: (status) => {
+        if (status.currentNav) {
+          this.liveNav = status.currentNav;
+        }
+        if (status.capital) {
+          this.accountCapital = status.capital;
+        }
+        if (status.riskPerTradePercent) {
+          this.maxRiskPercent = status.riskPerTradePercent;
+        }
+        this.cdr.markForCheck();
+      },
+      error: () => {}
+    });
+  }
+
+  setCapital(amount: number): void {
+    this.accountCapital = amount;
+    this.cdr.markForCheck();
   }
 
   get maxAllowedLossAmount(): number {

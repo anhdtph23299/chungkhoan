@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TradeService, Trade, PortfolioSummary } from '../../services/trade';
+import { BotService } from '../../services/bot';
 
 @Component({
   selector: 'app-portfolio',
@@ -12,17 +13,17 @@ import { TradeService, Trade, PortfolioSummary } from '../../services/trade';
 })
 export class PortfolioComponent implements OnInit {
   summary: PortfolioSummary = {
-    totalInvested: 150000000,
-    currentValue: 168500000,
-    totalPnl: 18500000,
-    totalPnlPercent: 12.33,
-    openPositions: 3,
-    totalTrades: 12,
-    winningTrades: 8,
-    winRate: 66.7
+    totalInvested: 0,
+    currentValue: 0,
+    totalPnl: 0,
+    totalPnlPercent: 0,
+    openPositions: 0,
+    totalTrades: 0,
+    winningTrades: 0,
+    winRate: 0
   };
 
-  cashBalance = 45000000; // Tiền mặt phòng thủ 45tr
+  cashBalance = 100000000;
   openPositions: Trade[] = [];
   closedPositions: Trade[] = [];
 
@@ -37,30 +38,76 @@ export class PortfolioComponent implements OnInit {
     notes: 'Kỷ luật chốt lời đúng kế hoạch, không tham lam'
   };
 
-  constructor(private tradeService: TradeService) {}
+  constructor(
+    private tradeService: TradeService,
+    private botService: BotService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.loadPortfolio();
   }
 
   loadPortfolio(): void {
+    this.botService.getBotStatus().subscribe({
+      next: (status) => {
+        if (status.availableCash !== undefined) {
+          this.cashBalance = status.availableCash;
+        }
+        this.cdr.markForCheck();
+      },
+      error: () => {}
+    });
+
     this.tradeService.getPortfolioSummary().subscribe({
       next: (res) => {
-        if (res && res.totalTrades > 0) this.summary = res;
+        if (res && res.totalTrades > 0) {
+          this.summary = res;
+        }
+        this.cdr.markForCheck();
       },
-      error: () => console.log('Using default summary')
+      error: () => console.log('Using calculated summary')
     });
 
     this.tradeService.getAllTrades().subscribe({
       next: (trades) => {
         if (trades && trades.length > 0) {
-          this.openPositions = trades.filter(t => t.status === 'OPEN');
-          this.closedPositions = trades.filter(t => t.status === 'CLOSED');
+          this.openPositions = trades.filter(t => t.status?.toLowerCase() === 'open');
+          this.closedPositions = trades.filter(t => t.status?.toLowerCase() === 'closed');
+          
+          // Tính toán lại summary thực tế từ các lệnh trong DB
+          const totalTrades = this.openPositions.length + this.closedPositions.length;
+          const winningTrades = this.closedPositions.filter(t => (t.pnl || 0) > 0).length;
+          const winRate = this.closedPositions.length > 0
+            ? Math.round((winningTrades / this.closedPositions.length) * 1000) / 10
+            : 0;
+          const totalInvested = this.openPositions.reduce((sum, t) => sum + (t.price * t.quantity), 0);
+          const totalOpenPnl = this.openPositions.reduce((sum, t) => sum + (t.pnl || 0), 0);
+          const totalClosedPnl = this.closedPositions.reduce((sum, t) => sum + (t.pnl || 0), 0);
+          const totalPnl = totalOpenPnl + totalClosedPnl;
+          const totalPnlPercent = totalInvested > 0
+            ? Math.round((totalOpenPnl / totalInvested) * 10000) / 100
+            : 0;
+
+          this.summary = {
+            totalInvested,
+            currentValue: totalInvested + totalOpenPnl,
+            totalPnl,
+            totalPnlPercent,
+            openPositions: this.openPositions.length,
+            totalTrades,
+            winningTrades,
+            winRate
+          };
         } else {
           this.initMockPortfolio();
         }
+        this.cdr.markForCheck();
       },
-      error: () => this.initMockPortfolio()
+      error: () => {
+        this.initMockPortfolio();
+        this.cdr.markForCheck();
+      }
     });
   }
 
@@ -203,7 +250,7 @@ export class PortfolioComponent implements OnInit {
       pnlPercent: Math.round(pnlPercent * 100) / 100,
       reason: this.closeData.reason,
       notes: this.closeData.notes,
-      status: 'CLOSED'
+      status: 'closed'
     };
 
     this.tradeService.closeTrade(this.selectedTradeToClose.id, payload).subscribe({

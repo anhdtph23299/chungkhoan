@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ScheduleService, ScheduleEvent } from '../../services/schedule';
@@ -99,7 +99,10 @@ export class ScheduleComponent implements OnInit {
 
   showPromptBox = false;
 
-  constructor(private scheduleService: ScheduleService) {}
+  constructor(
+    private scheduleService: ScheduleService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.highlightCurrentPhase();
@@ -120,6 +123,7 @@ export class ScheduleComponent implements OnInit {
       const endMin = eh * 60 + em;
       r.isCurrent = (curMin >= startMin && curMin <= endMin);
     });
+    this.cdr.markForCheck();
   }
 
   loadEvents(): void {
@@ -130,8 +134,12 @@ export class ScheduleComponent implements OnInit {
         } else {
           this.initMockEvents();
         }
+        this.cdr.markForCheck();
       },
-      error: () => this.initMockEvents()
+      error: () => {
+        this.initMockEvents();
+        this.cdr.markForCheck();
+      }
     });
   }
 
