@@ -24,6 +24,8 @@ export class PortfolioComponent implements OnInit {
   };
 
   cashBalance = 100000000;
+  initialCapital = 100000000;
+  todayRealizedPnl = 0;
   openPositions: Trade[] = [];
   closedPositions: Trade[] = [];
 
@@ -53,6 +55,12 @@ export class PortfolioComponent implements OnInit {
       next: (status) => {
         if (status.availableCash !== undefined) {
           this.cashBalance = status.availableCash;
+        }
+        if (status.todayRealizedPnl !== undefined) {
+          this.todayRealizedPnl = status.todayRealizedPnl;
+        }
+        if (status.capital !== undefined) {
+          this.initialCapital = status.capital;
         }
         this.cdr.markForCheck();
       },
@@ -217,6 +225,12 @@ export class PortfolioComponent implements OnInit {
 
   get cashWeight(): number {
     return 100 - this.stockWeight;
+  }
+
+  get currentDrawdown(): number {
+    return this.totalNAV < this.initialCapital
+      ? Math.round(((this.initialCapital - this.totalNAV) / this.initialCapital) * 10000) / 100
+      : 0;
   }
 
   getHoldingWeight(pos: Trade): number {

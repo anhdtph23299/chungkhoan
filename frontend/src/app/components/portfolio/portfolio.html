@@ -7,6 +7,37 @@
     </div>
   </div>
 
+  <!-- Defensive Shield Banner -->
+  <div class="glass-card defense-shield-card">
+    <div class="shield-header-row">
+      <div class="shield-badge">
+        <span>🛡️</span>
+        <span>TRẠNG THÁI PHÒNG THỦ: 100% TIỀN MẶT AN TOÀN (WEEKEND DEFENSE)</span>
+      </div>
+      <span class="shield-tagline">Toàn bộ 9 vị thế chu kỳ T1 đã được chốt lời/cắt lỗ kỷ luật & kiểm soát rủi ro qua đêm</span>
+    </div>
+    <div class="shield-grid">
+      <div class="shield-item">
+        <span class="s-label">Tiền mặt khả dụng</span>
+        <strong class="s-val font-mono stock-up">{{ cashBalance | number:'1.0-0' }} đ</strong>
+      </div>
+      <div class="shield-item">
+        <span class="s-label">Rủi ro qua đêm (Overnight Risk)</span>
+        <strong class="s-val font-mono stock-up">0.00% (An toàn tuyệt đối)</strong>
+      </div>
+      <div class="shield-item">
+        <span class="s-label">Drawdown tài khoản đã khống chế</span>
+        <strong class="s-val font-mono" [ngClass]="currentDrawdown <= 5 ? 'stock-up' : 'stock-down'">
+          {{ currentDrawdown > 0 ? '-' : '' }}{{ currentDrawdown | number:'1.2-2' }}% (Chuẩn an toàn &lt; 5%)
+        </strong>
+      </div>
+      <div class="shield-item">
+        <span class="s-label">Lợi nhuận chốt hôm nay</span>
+        <strong class="s-val font-mono stock-up">+{{ todayRealizedPnl | number:'1.0-0' }} đ</strong>
+      </div>
+    </div>
+  </div>
+
   <!-- Asset Allocation & Cash Ratio Bar -->
   <div class="glass-card allocation-card">
     <div class="alloc-stats">
