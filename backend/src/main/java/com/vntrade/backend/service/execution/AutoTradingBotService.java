@@ -60,6 +60,7 @@ public class AutoTradingBotService {
     private final RelativeRotationGraphService relativeRotationGraphService;
     private final BotDecisionAuditService botDecisionAuditService;
     private final com.vntrade.backend.service.decision.OversoldBounceDetectorService oversoldBounceDetectorService;
+    private final com.vntrade.backend.service.decision.MarketRegimeDetectionService marketRegimeDetectionService;
 
     // Bot Configuration & State
     private boolean isRunning = true;
@@ -396,15 +397,17 @@ public class AutoTradingBotService {
             addLog("🎉 ĐÃ ĐẠT MỤC TIÊU KIẾM TIỀN HÔM NAY (+" + todayRealizedPnl + " đ). Bot bảo toàn thành quả.");
         }
 
-        // 4.5. Kiểm tra Cầu chì Bảo vệ Thị trường sụp đổ (Market Crash Protection DEFCON)
+        // 4.5b. QUY TẮC LÃO LÀNG: KIỂM SOÁT PHA THỊ TRƯỜNG CHUNG VN-INDEX
         try {
-            MarketCrashProtectionDto crash = crashProtectionService.evaluateMarketCircuitBreaker();
-            if (crash != null && !crash.isAllowNewPurchases()) {
-                addLog("🚨 [CẦU CHÌ BẢO VỆ " + crash.getDefenseStatus() + "] Khóa 100% lệnh mua mới: " + crash.getCircuitBreakerMessage());
+            var regime = marketRegimeDetectionService.detectMarketRegime();
+            if (regime != null && "DOWNTREND_DEFENSE".equalsIgnoreCase(regime.getCurrentRegime())) {
+                if (cycleScanCount % 4 == 0) {
+                    addLog("🛡️ [QUY TẮC LÃO LÀNG - VN-INDEX PHÒNG THỦ] Thị trường chung đang trong nhịp Downtrend/Phân phối mạnh. Già làng ôm tiền mặt, bot KHÓA 100% lệnh mở mới!");
+                }
                 return;
             }
         } catch (Exception e) {
-            log.warn("Lỗi kiểm tra cầu chì thị trường: {}", e.getMessage());
+            log.debug("Lỗi kiểm tra chế độ thị trường: {}", e.getMessage());
         }
 
         // 4.6. Kiểm tra khung giờ giao dịch chính thức của sàn HOSE/HNX (09:00 - 11:30 và 13:00 - 14:45)
@@ -756,8 +759,8 @@ public class AutoTradingBotService {
                     continue;
                 }
 
-                // 2. GẶT HÁI LỢI NHUẬN HÀNG NGÀY: Chốt lời 50% khi lãi >= +10%
-                if (pnlPct.compareTo(BigDecimal.valueOf(10.0)) >= 0
+                // 2. GẶT HÁI LỢI NHUẬN LÃO LÀNG (Dan Zanger / Mark Minervini): Chốt lời 50% khi lãi >= +8.0%
+                if (pnlPct.compareTo(BigDecimal.valueOf(8.0)) >= 0
                     && (trade.getPartialClosedQuantity() == null || trade.getPartialClosedQuantity() == 0)
                     && trade.getQuantity() >= 200) {
 

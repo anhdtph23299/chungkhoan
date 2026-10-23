@@ -20,13 +20,27 @@ public class MarketRegimeDetectionService {
     private final StockPriceService stockPriceService;
 
     public MarketRegimeDto detectMarketRegime() {
-        StockQuote fptQuote = stockPriceService.getQuote("FPT");
-        double changePct = fptQuote.getChangePercent() != null ? fptQuote.getChangePercent().doubleValue() : 1.2;
+        // Khảo sát độ rộng thị trường qua 6 trụ cột dẫn dắt chỉ số VN-Index / VN30
+        List<String> pillars = List.of("VCB", "BID", "TCB", "HPG", "FPT", "VHM");
+        double totalChange = 0;
+        int validQuotes = 0;
+        int negativePillars = 0;
 
+        for (String sym : pillars) {
+            StockQuote q = stockPriceService.getQuote(sym);
+            if (q != null && q.getChangePercent() != null) {
+                double chg = q.getChangePercent().doubleValue();
+                totalChange += chg;
+                validQuotes++;
+                if (chg < 0) negativePillars++;
+            }
+        }
+
+        double avgPillarChange = validQuotes > 0 ? (totalChange / validQuotes) : 0.0;
         BigDecimal vnIndexLevel = BigDecimal.valueOf(1285.50);
-        BigDecimal vnIndexChangePercent = BigDecimal.valueOf(changePct > 0 ? 0.65 : -0.45);
-        int distributionDays = changePct >= 0 ? 1 : 4; // Số ngày phân phối
-        boolean ftdConfirmed = changePct >= -0.5;
+        BigDecimal vnIndexChangePercent = BigDecimal.valueOf(avgPillarChange).setScale(2, RoundingMode.HALF_UP);
+        int distributionDays = negativePillars >= 4 ? 5 : (negativePillars >= 2 ? 3 : 1);
+        boolean ftdConfirmed = avgPillarChange >= -0.3;
 
         String regime;
         String displayName;

@@ -80,10 +80,10 @@ public class BacktestController {
     public ResponseEntity<BacktestResult> quickBacktest(@PathVariable String symbol) {
         BacktestRequest request = BacktestRequest.builder()
             .symbol(symbol)
-            .strategy("VN30_ENSEMBLE")
-            .candlesCount(150)
-            .stopLossPercent(7.0)
-            .takeProfitPercent(15.0)
+            .strategy("VET_VSA_VCP")
+            .candlesCount(500)
+            .stopLossPercent(6.0)
+            .takeProfitPercent(18.0)
             .build();
         return ResponseEntity.ok(backtestService.runBacktest(request));
     }
@@ -91,7 +91,7 @@ public class BacktestController {
     @GetMapping("/compare/{symbol}")
     public ResponseEntity<java.util.List<BacktestResult>> compareStrategies(
             @PathVariable String symbol,
-            @RequestParam(required = false, defaultValue = "150") Integer candles,
+            @RequestParam(required = false, defaultValue = "500") Integer candles,
             @RequestParam(required = false, defaultValue = "100000000") java.math.BigDecimal capital) {
         return ResponseEntity.ok(backtestService.runMultiStrategyComparison(symbol, candles, capital));
     }
@@ -99,7 +99,64 @@ public class BacktestController {
     @GetMapping("/optimize/{symbol}")
     public ResponseEntity<com.vntrade.backend.dto.OptimizationResult> optimizeStrategy(
             @PathVariable String symbol,
-            @RequestParam(required = false, defaultValue = "150") Integer candles) {
+            @RequestParam(required = false, defaultValue = "500") Integer candles) {
         return ResponseEntity.ok(strategyOptimizerService.optimizeParameters(symbol, candles));
     }
-}
+
+    /**
+     * Chạy VET_VSA_VCP (Chiến thuật Lão làng VSA + Minervini VCP + Chốt 50% tiền mặt)
+     * trên 10 cổ phiếu leader hàng đầu thị trường VN
+     */
+    @GetMapping("/veteran-focus")
+    public ResponseEntity<java.util.List<BacktestResult>> veteranFocusLeaders(
+            @RequestParam(required = false, defaultValue = "500") Integer candles,
+            @RequestParam(required = false, defaultValue = "6.0") Double sl,
+            @RequestParam(required = false, defaultValue = "18.0") Double tp) {
+        java.util.List<String> leaders = java.util.List.of(
+            "TCB", "MWG", "FPT", "HPG", "VCB", "BID", "SSI", "ACB", "VHM", "DCM"
+        );
+        java.util.List<BacktestResult> results = new java.util.ArrayList<>();
+        for (String sym : leaders) {
+            BacktestRequest req = BacktestRequest.builder()
+                .symbol(sym)
+                .strategy("VET_VSA_VCP")
+                .candlesCount(candles)
+                .initialCapital(java.math.BigDecimal.valueOf(100_000_000))
+                .stopLossPercent(sl)
+                .takeProfitPercent(tp)
+                .build();
+            results.add(backtestService.runBacktest(req));
+        }
+        results.sort((a, b) -> b.getNetProfit().compareTo(a.getNetProfit()));
+        return ResponseEntity.ok(results);
+    }
+
+    /**
+     * Chạy RSI_OVERSOLD 500 nến trên tất cả cổ phiếu leader cùng lúc
+     * Trả về bảng xếp hạng theo lợi nhuận ròng (tốt nhất lên đầu)
+     */
+    @GetMapping("/rsi-focus")
+    public ResponseEntity<java.util.List<BacktestResult>> rsiFocusLeaders(
+            @RequestParam(required = false, defaultValue = "500") Integer candles,
+            @RequestParam(required = false, defaultValue = "6.0") Double sl,
+            @RequestParam(required = false, defaultValue = "18.0") Double tp) {
+        java.util.List<String> leaders = java.util.List.of(
+            "TCB", "DCM", "MWG", "FPT", "HPG", "VCB", "BID", "SSI", "ACB", "VHM"
+        );
+        java.util.List<BacktestResult> results = new java.util.ArrayList<>();
+        for (String sym : leaders) {
+            BacktestRequest req = BacktestRequest.builder()
+                .symbol(sym)
+                .strategy("RSI_OVERSOLD")
+                .candlesCount(candles)
+                .initialCapital(java.math.BigDecimal.valueOf(100_000_000))
+                .stopLossPercent(sl)
+                .takeProfitPercent(tp)
+                .build();
+            results.add(backtestService.runBacktest(req));
+        }
+        // Sắp xếp: lợi nhuận cao nhất lên đầu
+        results.sort((a, b) -> b.getNetProfit().compareTo(a.getNetProfit()));
+        return ResponseEntity.ok(results);
+    }
+}

@@ -22,11 +22,11 @@ public class BacktestService {
 
     public BacktestResult runBacktest(BacktestRequest req) {
         String symbol = req.getSymbol() != null ? req.getSymbol().toUpperCase() : "FPT";
-        String strategy = req.getStrategy() != null ? req.getStrategy() : "BREAKOUT_VOL";
-        int candlesCount = req.getCandlesCount() != null ? req.getCandlesCount() : 150;
+        String strategy = req.getStrategy() != null ? req.getStrategy() : "VET_VSA_VCP";
+        int candlesCount = req.getCandlesCount() != null ? req.getCandlesCount() : 500;
         BigDecimal initialCapital = req.getInitialCapital() != null ? req.getInitialCapital() : BigDecimal.valueOf(100_000_000);
-        double slPct = req.getStopLossPercent() != null ? req.getStopLossPercent() : 7.0;
-        double tpPct = req.getTakeProfitPercent() != null ? req.getTakeProfitPercent() : 15.0;
+        double slPct = req.getStopLossPercent() != null ? req.getStopLossPercent() : 6.0;
+        double tpPct = req.getTakeProfitPercent() != null ? req.getTakeProfitPercent() : 18.0;
 
         List<Candle> candles = candleDataService.getHistoricalCandles(symbol, candlesCount);
         if (candles.size() < 30) {
@@ -68,6 +68,9 @@ public class BacktestService {
         BigDecimal stopLoss = BigDecimal.ZERO;
         BigDecimal takeProfit = BigDecimal.ZERO;
         int positionQty = 0;
+        int initialQty = 0;
+        boolean halfHarvested = false;
+        BigDecimal partialHarvestPnl = BigDecimal.ZERO;
         Candle entryCandle = null;
 
         for (int i = 25; i < candles.size(); i++) {
@@ -83,11 +86,6 @@ public class BacktestService {
             }
 
             if (inPosition) {
-                // Trailing Stop: Dời SL lên hòa vốn khi lãi >= 7%
-                if (current.getHigh().compareTo(entryPrice.multiply(BigDecimal.valueOf(1.07))) >= 0) {
-                    BigDecimal beStop = entryPrice.multiply(BigDecimal.valueOf(1.005)).setScale(0, RoundingMode.HALF_UP);
-                    if (beStop.compareTo(stopLoss) > 0) stopLoss = beStop;
-                }
                 // Trailing Stop động theo ATR khi lãi >= 12%
                 if (current.getHigh().compareTo(entryPrice.multiply(BigDecimal.valueOf(1.12))) >= 0) {
                     BigDecimal curAtr = (atr14 != null && atr14.get(i) != null) ? atr14.get(i) : entryPrice.multiply(BigDecimal.valueOf(0.025));
@@ -95,7 +93,35 @@ public class BacktestService {
                     if (trailStop.compareTo(stopLoss) > 0) stopLoss = trailStop;
                 }
 
-                // Kiểm tra Cắt Lỗ
+                // QUY TẮC LÃO LÀNG SỐ 1 (Dan Zanger / Mark Minervini):
+                // Gặt hái 50% tiền mặt khi lãi chạm +7.5% - +8.0% bỏ túi lợi nhuận thực tế!
+                // Dời Stop Loss 50% còn lại lên Giá vốn + 0.5% phí -> Đảm bảo deal không bao giờ bị lỗ ngược.
+                if (!halfHarvested && current.getHigh().compareTo(entryPrice.multiply(BigDecimal.valueOf(1.075))) >= 0) {
+                    int sellHalf = (positionQty / 200) * 100;
+                    if (sellHalf >= 100) {
+                        BigDecimal harvestPrice = entryPrice.multiply(BigDecimal.valueOf(1.075)).setScale(0, RoundingMode.HALF_UP);
+                        BigDecimal grossSell = harvestPrice.multiply(BigDecimal.valueOf(sellHalf));
+                        BigDecimal sellFee = grossSell.multiply(BigDecimal.valueOf(0.0015));
+                        BigDecimal sellTax = grossSell.multiply(BigDecimal.valueOf(0.0010));
+                        BigDecimal netSell = grossSell.subtract(sellFee).subtract(sellTax);
+
+                        BigDecimal grossBuy = entryPrice.multiply(BigDecimal.valueOf(sellHalf));
+                        BigDecimal buyFee = grossBuy.multiply(BigDecimal.valueOf(0.0015));
+                        BigDecimal netBuy = grossBuy.add(buyFee);
+
+                        BigDecimal pnl1 = netSell.subtract(netBuy);
+                        capital = capital.add(pnl1);
+                        partialHarvestPnl = partialHarvestPnl.add(pnl1);
+                        positionQty -= sellHalf;
+                        halfHarvested = true;
+
+                        // Nâng giáp bảo vệ hòa vốn cho phần còn lại
+                        BigDecimal beStop = entryPrice.multiply(BigDecimal.valueOf(1.005)).setScale(0, RoundingMode.HALF_UP);
+                        if (beStop.compareTo(stopLoss) > 0) stopLoss = beStop;
+                    }
+                }
+
+                // Kiểm tra Cắt Lỗ hoặc Chạm Trailing Stop / Hòa Vốn
                 if (current.getLow().compareTo(stopLoss) <= 0) {
                     BigDecimal exitPrice = stopLoss;
                     BigDecimal grossSell = exitPrice.multiply(BigDecimal.valueOf(positionQty));
@@ -107,24 +133,35 @@ public class BacktestService {
                     BigDecimal buyFee = grossBuy.multiply(BigDecimal.valueOf(0.0015));
                     BigDecimal netBuy = grossBuy.add(buyFee);
 
-                    BigDecimal pnl = netSell.subtract(netBuy);
-                    BigDecimal pnlPct = pnl.divide(netBuy, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
-                    capital = capital.add(pnl);
+                    BigDecimal pnl2 = netSell.subtract(netBuy);
+                    BigDecimal totalPnl = partialHarvestPnl.add(pnl2);
+                    capital = capital.add(pnl2);
+
+                    BigDecimal totalGrossBuy = entryPrice.multiply(BigDecimal.valueOf(initialQty));
+                    BigDecimal totalBuyFee = totalGrossBuy.multiply(BigDecimal.valueOf(0.0015));
+                    BigDecimal totalNetBuy = totalGrossBuy.add(totalBuyFee);
+                    BigDecimal pnlPct = totalNetBuy.compareTo(BigDecimal.ZERO) > 0
+                        ? totalPnl.divide(totalNetBuy, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+                        : BigDecimal.ZERO;
+
+                    String exitReason = halfHarvested
+                        ? "HARVEST_50_AND_BREAKEVEN"
+                        : (stopLoss.compareTo(entryPrice) >= 0 ? "TRAILING_STOP_PROFIT" : "STOP_LOSS");
 
                     tradeHistory.add(BacktestTrade.builder()
                         .entryDate(entryCandle.getDate())
                         .entryPrice(entryPrice)
                         .exitDate(current.getDate())
                         .exitPrice(exitPrice)
-                        .quantity(positionQty)
-                        .pnl(pnl)
+                        .quantity(initialQty)
+                        .pnl(totalPnl)
                         .pnlPercent(pnlPct)
-                        .exitReason(stopLoss.compareTo(entryPrice) >= 0 ? "TRAILING_STOP_PROFIT" : "STOP_LOSS")
+                        .exitReason(exitReason)
                         .build()
                     );
                     inPosition = false;
                 }
-                // Kiểm tra Chốt Lời
+                // Kiểm tra Chốt Lời Mục Tiêu TP (+18%)
                 else if (current.getHigh().compareTo(takeProfit) >= 0) {
                     BigDecimal exitPrice = takeProfit;
                     BigDecimal grossSell = exitPrice.multiply(BigDecimal.valueOf(positionQty));
@@ -136,19 +173,26 @@ public class BacktestService {
                     BigDecimal buyFee = grossBuy.multiply(BigDecimal.valueOf(0.0015));
                     BigDecimal netBuy = grossBuy.add(buyFee);
 
-                    BigDecimal pnl = netSell.subtract(netBuy);
-                    BigDecimal pnlPct = pnl.divide(netBuy, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
-                    capital = capital.add(pnl);
+                    BigDecimal pnl2 = netSell.subtract(netBuy);
+                    BigDecimal totalPnl = partialHarvestPnl.add(pnl2);
+                    capital = capital.add(pnl2);
+
+                    BigDecimal totalGrossBuy = entryPrice.multiply(BigDecimal.valueOf(initialQty));
+                    BigDecimal totalBuyFee = totalGrossBuy.multiply(BigDecimal.valueOf(0.0015));
+                    BigDecimal totalNetBuy = totalGrossBuy.add(totalBuyFee);
+                    BigDecimal pnlPct = totalNetBuy.compareTo(BigDecimal.ZERO) > 0
+                        ? totalPnl.divide(totalNetBuy, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+                        : BigDecimal.ZERO;
 
                     tradeHistory.add(BacktestTrade.builder()
                         .entryDate(entryCandle.getDate())
                         .entryPrice(entryPrice)
                         .exitDate(current.getDate())
                         .exitPrice(exitPrice)
-                        .quantity(positionQty)
-                        .pnl(pnl)
+                        .quantity(initialQty)
+                        .pnl(totalPnl)
                         .pnlPercent(pnlPct)
-                        .exitReason("TAKE_PROFIT")
+                        .exitReason(halfHarvested ? "RUNNER_FULL_TARGET" : "TAKE_PROFIT")
                         .build()
                     );
                     inPosition = false;
@@ -160,13 +204,45 @@ public class BacktestService {
                 long curVol = current.getVolume() != null ? current.getVolume() : 1_000_000L;
                 double volRatio = vSma.compareTo(BigDecimal.ZERO) > 0 ? (double) curVol / vSma.doubleValue() : 1.0;
 
-                if ("BREAKOUT_VOL".equalsIgnoreCase(strategy)) {
-                    // Giá vượt đỉnh 20 phiên trước + Volume > 1.3x MA20 vol
-                    BigDecimal highest20 = BigDecimal.ZERO;
-                    for (int j = i - 20; j < i; j++) {
-                        if (candles.get(j).getClose().compareTo(highest20) > 0) highest20 = candles.get(j).getClose();
+                // =========================================================================
+                // CHIẾN LƯỢC LÃO LÀNG: VSA + MINERVINI VCP + DÒNG TIỀN LỚN (SMART MONEY)
+                // =========================================================================
+                if ("VET_VSA_VCP".equalsIgnoreCase(strategy) || "VSA_LEADER".equalsIgnoreCase(strategy) || "BREAKOUT_VOL".equalsIgnoreCase(strategy)) {
+                    BigDecimal m20 = (ma20 != null && i < ma20.size()) ? ma20.get(i) : null;
+                    BigDecimal m50 = (ma50 != null && i < ma50.size()) ? ma50.get(i) : null;
+
+                    // 1. Minervini Trend Template: Giá trên MA50, MA20 dốc lên
+                    boolean trendOk = m20 != null && m50 != null && current.getClose().compareTo(m50) > 0 && m20.compareTo(m50) >= 0;
+
+                    // 2. VSA Dry-Up (Cạn cung): Trong 4 phiên trước phải có ít nhất 1 phiên thanh khoản cạn kiệt (< 0.85x MA20 vol)
+                    boolean volumeDryUp = false;
+                    for (int j = Math.max(0, i - 4); j < i; j++) {
+                        if (candles.get(j).getVolume() != null && volSma20.get(j) != null) {
+                            if (candles.get(j).getVolume().doubleValue() < volSma20.get(j).doubleValue() * 0.85) {
+                                volumeDryUp = true;
+                                break;
+                            }
+                        }
                     }
-                    if (current.getClose().compareTo(highest20) > 0 && volRatio >= 1.25) {
+
+                    // 3. Smart Money Volume Breakout: Vol bùng nổ >= 1.25x bình quân 20 phiên
+                    boolean volOk = volRatio >= 1.25;
+
+                    // 4. Pivot Breakout: Đóng cửa vượt đỉnh 15 phiên trước đó
+                    BigDecimal highestPivot = BigDecimal.ZERO;
+                    for (int j = Math.max(0, i - 15); j < i; j++) {
+                        if (candles.get(j).getHigh().compareTo(highestPivot) > 0) highestPivot = candles.get(j).getHigh();
+                    }
+                    boolean pivotBreakout = highestPivot.compareTo(BigDecimal.ZERO) > 0 && current.getClose().compareTo(highestPivot) > 0;
+
+                    // 5. Chống bẫy FOMO trần tím T+2.5: Giá không tăng quá xa đỉnh cũ (<= 3.5%)
+                    boolean notOverextended = highestPivot.compareTo(BigDecimal.ZERO) > 0
+                        && current.getClose().subtract(highestPivot).divide(highestPivot, 4, RoundingMode.HALF_UP).doubleValue() <= 0.035;
+
+                    // Nến xanh: Close > Open
+                    boolean greenCandle = current.getClose().compareTo(current.getOpen()) > 0;
+
+                    if (trendOk && volumeDryUp && volOk && pivotBreakout && notOverextended && greenCandle) {
                         buySignal = true;
                     }
                 } else if ("MA_PULLBACK".equalsIgnoreCase(strategy)) {
@@ -181,7 +257,14 @@ public class BacktestService {
                 } else if ("RSI_OVERSOLD".equalsIgnoreCase(strategy)) {
                     BigDecimal prevRsi = rsi14.get(i - 1);
                     BigDecimal currRsi = rsi14.get(i);
-                    if (prevRsi != null && currRsi != null && prevRsi.doubleValue() < 38 && currRsi.doubleValue() >= 38) {
+                    BigDecimal m50 = (ma50 != null && i < ma50.size()) ? ma50.get(i) : null;
+                    // Bắt hồi phục RSI Oversold kết hợp VSA cạn cung (không bắt dao rơi)
+                    boolean rsiBounce = prevRsi != null && currRsi != null && prevRsi.doubleValue() < 35 && currRsi.doubleValue() >= 35;
+                    boolean notFreeFall = m50 == null || current.getClose().compareTo(m50.multiply(BigDecimal.valueOf(0.85))) >= 0;
+                    boolean greenCandle = current.getClose().compareTo(current.getOpen()) > 0;
+                    boolean sellingExhausted = volRatio <= 1.25;
+
+                    if (rsiBounce && notFreeFall && greenCandle && sellingExhausted) {
                         buySignal = true;
                     }
                 } else if ("MACD_TREND".equalsIgnoreCase(strategy)) {
@@ -220,10 +303,14 @@ public class BacktestService {
                     stopLoss = entryPrice.multiply(BigDecimal.valueOf(1 - (slPct / 100))).setScale(0, RoundingMode.HALF_UP);
                     takeProfit = entryPrice.multiply(BigDecimal.valueOf(1 + (tpPct / 100))).setScale(0, RoundingMode.HALF_UP);
 
-                    // Giải ngân tối đa 25% NAV
+                    // Giải ngân tối đa 25% NAV làm tròn lô 100
                     BigDecimal alloc = capital.multiply(BigDecimal.valueOf(0.25));
                     int shares = alloc.divide(entryPrice, 0, RoundingMode.FLOOR).intValue();
                     positionQty = (shares / 100) * 100;
+                    initialQty = positionQty;
+                    halfHarvested = false;
+                    partialHarvestPnl = BigDecimal.ZERO;
+
                     if (positionQty >= 100) {
                         inPosition = true;
                     }
@@ -244,17 +331,24 @@ public class BacktestService {
             BigDecimal buyFee = grossBuy.multiply(BigDecimal.valueOf(0.0015));
             BigDecimal netBuy = grossBuy.add(buyFee);
 
-            BigDecimal pnl = netSell.subtract(netBuy);
-            BigDecimal pnlPct = pnl.divide(netBuy, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100));
-            capital = capital.add(pnl);
+            BigDecimal pnl2 = netSell.subtract(netBuy);
+            BigDecimal totalPnl = partialHarvestPnl.add(pnl2);
+            capital = capital.add(pnl2);
+
+            BigDecimal totalGrossBuy = entryPrice.multiply(BigDecimal.valueOf(initialQty));
+            BigDecimal totalBuyFee = totalGrossBuy.multiply(BigDecimal.valueOf(0.0015));
+            BigDecimal totalNetBuy = totalGrossBuy.add(totalBuyFee);
+            BigDecimal pnlPct = totalNetBuy.compareTo(BigDecimal.ZERO) > 0
+                ? totalPnl.divide(totalNetBuy, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
+                : BigDecimal.ZERO;
 
             tradeHistory.add(BacktestTrade.builder()
                 .entryDate(entryCandle.getDate())
                 .entryPrice(entryPrice)
                 .exitDate(lastCandle.getDate())
                 .exitPrice(exitPrice)
-                .quantity(positionQty)
-                .pnl(pnl)
+                .quantity(initialQty)
+                .pnl(totalPnl)
                 .pnlPercent(pnlPct)
                 .exitReason("EXIT_END_OF_TEST")
                 .build()
@@ -320,16 +414,17 @@ public class BacktestService {
      */
     public List<BacktestResult> runMultiStrategyComparison(String symbol, Integer candlesCount, BigDecimal initialCapital) {
         String sym = symbol != null ? symbol.toUpperCase() : "FPT";
-        int candles = (candlesCount != null && candlesCount > 0) ? candlesCount : 150;
+        int candles = (candlesCount != null && candlesCount > 0) ? candlesCount : 500;
         BigDecimal capital = (initialCapital != null && initialCapital.compareTo(BigDecimal.ZERO) > 0) ? initialCapital : BigDecimal.valueOf(100_000_000);
 
         List<String> strategies = List.of(
-            "VN30_ENSEMBLE",
+            "VET_VSA_VCP",
+            "RSI_OVERSOLD",
             "BREAKOUT_VOL",
             "MA_PULLBACK",
             "MACD_TREND",
             "BOLLINGER_SQUEEZE",
-            "RSI_OVERSOLD"
+            "VN30_ENSEMBLE"
         );
 
         List<BacktestResult> results = new ArrayList<>();
@@ -339,8 +434,8 @@ public class BacktestService {
                 .strategy(strat)
                 .candlesCount(candles)
                 .initialCapital(capital)
-                .stopLossPercent(7.0)
-                .takeProfitPercent(15.0)
+                .stopLossPercent(6.0)
+                .takeProfitPercent(18.0)
                 .build();
             results.add(runBacktest(req));
         }

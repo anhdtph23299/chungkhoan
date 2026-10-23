@@ -58,18 +58,40 @@ public class QuantitativeStrategyEngine {
             ? BigDecimal.valueOf(currentVol).divide(curVolSma, 2, RoundingMode.HALF_UP)
             : BigDecimal.ONE;
 
-        // 1. Scoring Factors
+        // 1. Scoring Factors - QUY TẮC LÃO LÀNG (Minervini & VSA)
+        // 1.1. Trend Template: Phạt nặng cổ phiếu downtrend, chỉ ưu tiên cổ phiếu uptrend (Giá > EMA20 > SMA50)
         int trendScore = 0;
-        if (price.compareTo(curEma20) > 0) trendScore += 10;
-        if (curEma20.compareTo(curSma50) > 0) trendScore += 10;
-        if (curSma50.compareTo(curSma200) > 0) trendScore += 10;
+        boolean inMajorUptrend = price.compareTo(curSma50) > 0 && curEma20.compareTo(curSma50) > 0;
+        boolean inDowntrend = price.compareTo(curSma50) < 0 && price.compareTo(curSma200) < 0;
+
+        if (inMajorUptrend) {
+            trendScore += 25; // Xu hướng tăng mạnh chuẩn Minervini
+            if (price.compareTo(curEma20) > 0) trendScore += 5;
+        } else if (price.compareTo(curEma20) > 0 && price.compareTo(curSma50) >= 0) {
+            trendScore += 15;
+        } else if (inDowntrend) {
+            trendScore = 0; // Tuyệt đối không ưu tiên cổ phiếu đang cắm đầu rơi
+        } else {
+            trendScore += 5;
+        }
+
+        // 1.2. VSA Cạn Cung (Volume Dry-Up): Soi 4 phiên trước xem có phiên cạn kiệt thanh khoản không
+        boolean hasVolumeDryUp = false;
+        for (int j = Math.max(0, lastIdx - 4); j < lastIdx; j++) {
+            if (candles.get(j).getVolume() != null && volSma20.get(j) != null) {
+                if (candles.get(j).getVolume().doubleValue() < volSma20.get(j).doubleValue() * 0.85) {
+                    hasVolumeDryUp = true;
+                    break;
+                }
+            }
+        }
 
         int momentumScore = 0;
         double rsiVal = curRsi.doubleValue();
         if (rsiVal >= 48 && rsiVal <= 65) {
             momentumScore += 15; // Golden momentum zone
-        } else if (rsiVal > 65) {
-            momentumScore += 12; // Strong bullish momentum
+        } else if (rsiVal > 65 && rsiVal <= 72) {
+            momentumScore += 12; // Bullish runner
         } else if (rsiVal >= 35 && rsiVal < 48) {
             momentumScore += 8; // Accumulation
         }
@@ -85,40 +107,43 @@ public class QuantitativeStrategyEngine {
 
         int volumeScore = 0;
         double vr = volRatio.doubleValue();
-        if (vr >= 1.4) {
-            volumeScore += 25; // Big smart money volume breakout
-        } else if (vr >= 1.2) {
-            volumeScore += 18;
+        if (vr >= 1.30 && hasVolumeDryUp) {
+            volumeScore += 30; // Điểm nổ VSA hoàn hảo: Cạn cung trước đó + Hôm nay bùng nổ Vol
+        } else if (vr >= 1.25) {
+            volumeScore += 20; // Bùng nổ vol khá
+        } else if (hasVolumeDryUp && vr >= 0.9) {
+            volumeScore += 15; // Đang siết nền cạn cung
         } else if (vr >= 0.9) {
-            volumeScore += 12;
+            volumeScore += 10;
         } else {
             volumeScore += 5;
         }
 
         int riskRewardScore = 0;
-        // Stop loss: 1.5 ATR dưới giá hiện tại, khống chế tối đa 7%
+        // Stop loss: khống chế tối đa 6.0% (bảo vệ 1 cây sàn HOSE)
         BigDecimal atrSlDistance = curAtr.multiply(BigDecimal.valueOf(1.5)).setScale(0, RoundingMode.HALF_UP);
-        BigDecimal maxSlPercentDistance = price.multiply(BigDecimal.valueOf(0.07)).setScale(0, RoundingMode.HALF_UP);
+        BigDecimal maxSlPercentDistance = price.multiply(BigDecimal.valueOf(0.06)).setScale(0, RoundingMode.HALF_UP);
         BigDecimal slDistance = atrSlDistance.min(maxSlPercentDistance);
         if (slDistance.compareTo(BigDecimal.ZERO) <= 0) slDistance = maxSlPercentDistance;
         BigDecimal stopLoss = roundToVietnameseTick(price.subtract(slDistance));
 
-        // Take Profit: 2.5 ATR trên giá hiện tại
-        BigDecimal tpDistance = curAtr.multiply(BigDecimal.valueOf(2.5)).setScale(0, RoundingMode.HALF_UP);
-        if (tpDistance.compareTo(slDistance.multiply(BigDecimal.valueOf(2))) < 0) {
-            tpDistance = slDistance.multiply(BigDecimal.valueOf(2.2)).setScale(0, RoundingMode.HALF_UP);
-        }
+        // Take Profit: Mục tiêu 18% (R:R = 1:3 theo chuẩn Minervini)
+        BigDecimal tpDistance = price.multiply(BigDecimal.valueOf(0.18)).setScale(0, RoundingMode.HALF_UP);
         BigDecimal targetPrice = roundToVietnameseTick(price.add(tpDistance));
 
         double rrRatio = slDistance.compareTo(BigDecimal.ZERO) > 0
             ? tpDistance.divide(slDistance, 2, RoundingMode.HALF_UP).doubleValue()
-            : 2.0;
+            : 3.0;
 
-        if (rrRatio >= 2.0) riskRewardScore += 20;
-        else if (rrRatio >= 1.5) riskRewardScore += 10;
+        if (rrRatio >= 2.5) riskRewardScore += 20;
+        else if (rrRatio >= 1.8) riskRewardScore += 12;
 
         int totalScore = trendScore + momentumScore + volumeScore + riskRewardScore;
-        totalScore = Math.min(100, Math.max(20, totalScore));
+        totalScore = Math.min(100, Math.max(15, totalScore));
+
+        // Bẫy FOMO trần tím T+2.5: Cổ phiếu tăng trần > +5.8% trong ngày tuyệt đối không mua đuổi
+        double changePct = quote.getChangePercent() != null ? quote.getChangePercent().doubleValue() : 0.0;
+        boolean isCeilingChasingTrap = changePct >= 5.8;
 
         // Signal Classification
         String signalType;
@@ -126,14 +151,29 @@ public class QuantitativeStrategyEngine {
         String signalDesc;
         String action;
 
-        if (totalScore >= 75 && vr >= 1.25 && price.compareTo(curEma20) > 0) {
+        if (isCeilingChasingTrap) {
+            signalType = "CEILING_FOMO_WARNING";
+            signalTitle = "Cảnh báo bẫy T+2.5: Không mua đuổi giá trần tím (+" + changePct + "%)";
+            signalDesc = "Cổ phiếu đã tăng nóng kịch trần. Theo kinh nghiệm lão làng, mua đuổi trần rủi ro bị xả hàng ở phiên T+2.5. Chờ nhịp pullback.";
+            action = "WATCH";
+        } else if (inDowntrend) {
+            signalType = "WARNING_DOWNTREND";
+            signalTitle = "Cổ phiếu trong kênh giảm giá (Dưới MA50 & MA200)";
+            signalDesc = "Xu hướng chính là giảm. Tuyệt đối không bắt dao rơi, bảo toàn tiền mặt.";
+            action = "AVOID";
+        } else if (totalScore >= 75 && vr >= 1.25 && hasVolumeDryUp && inMajorUptrend) {
+            signalType = "VET_VSA_VCP";
+            signalTitle = "🔥 Điểm nổ VCP chuẩn VSA (Cạn cung + Vol nổ " + volRatio + "x)";
+            signalDesc = String.format("Thanh khoản cạn kiệt trước đó, phiên nay dòng tiền lớn bùng nổ vượt Pivot. Uptrend vững, R:R 1:%.1f.", rrRatio);
+            action = "STRONG_BUY";
+        } else if (totalScore >= 72 && vr >= 1.20 && price.compareTo(curEma20) > 0) {
             signalType = "BREAKOUT_VOL";
             signalTitle = "Bùng nổ vượt kháng cự với Vol tăng " + volRatio + "x";
-            signalDesc = String.format("Dòng tiền Big Boys tích lũy mạnh, EMA20 (%s) dốc lên, RSI %s khỏe.", curEma20, curRsi);
+            signalDesc = String.format("Dòng tiền Big Boys tích lũy tốt, EMA20 (%s) dốc lên, RSI %s khỏe.", curEma20, curRsi);
             action = "STRONG_BUY";
-        } else if (totalScore >= 70 && rsiVal >= 45 && rsiVal <= 60 && Math.abs(price.doubleValue() - curEma20.doubleValue()) / curEma20.doubleValue() < 0.02) {
+        } else if (totalScore >= 68 && rsiVal >= 45 && rsiVal <= 62 && Math.abs(price.doubleValue() - curEma20.doubleValue()) / curEma20.doubleValue() < 0.02) {
             signalType = "PULLBACK_MA20";
-            signalTitle = "Kéo ngược kiểm định hỗ trợ EMA20 chuẩn VSA";
+            signalTitle = "Kéo ngược kiểm định hỗ trợ EMA20 chuẩn VSA (Test Cung)";
             signalDesc = String.format("Nến rút chân quanh EMA20 (%s), rủi ro thấp R:R 1:%.1f.", curEma20, rrRatio);
             action = "BUY";
         } else if (curMacd != null && curMacd.getHistogram() != null && curMacd.getHistogram().compareTo(BigDecimal.ZERO) > 0 && totalScore >= 65) {
