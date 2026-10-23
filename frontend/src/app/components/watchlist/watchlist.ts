@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import { WatchlistService, WatchlistItem } from '../../services/watchlist';
 import { StockService, StockQuote } from '../../services/stock';
 import { TradeService, Trade } from '../../services/trade';
+import { BotService, BreakoutItem } from '../../services/bot';
 
 export interface WatchlistStockView {
   id?: number;
@@ -37,6 +38,7 @@ export class WatchlistComponent implements OnInit {
   filteredItems: WatchlistStockView[] = [];
   selectedSector = 'ALL';
   searchQuery = '';
+  breakoutRadar: BreakoutItem[] = [];
 
   showAddModal = false;
   newItem: Partial<WatchlistItem> = {
@@ -54,18 +56,24 @@ export class WatchlistComponent implements OnInit {
 
   sectors = [
     { id: 'ALL', name: 'Tất cả mã' },
-    { id: 'VN30', name: 'Nhóm VN30' },
+    { id: 'TECH', name: 'Công nghệ' },
     { id: 'BANK', name: 'Ngân hàng' },
     { id: 'SEC', name: 'Chứng khoán' },
-    { id: 'STEEL', name: 'Thép' },
-    { id: 'TECH', name: 'Công nghệ' },
-    { id: 'RE', name: 'Bất động sản' }
+    { id: 'STEEL', name: 'Thép & Hóa chất' },
+    { id: 'OIL', name: 'Dầu khí & Tiện ích' },
+    { id: 'LOG', name: 'Cảng biển & Logistics' },
+    { id: 'RETAIL', name: 'Bán lẻ & Tiêu dùng' },
+    { id: 'RE', name: 'Bất động sản' },
+    { id: 'KCN', name: 'Bất động sản KCN' },
+    { id: 'AGRI', name: 'Nông nghiệp & Thủy sản' },
+    { id: 'INFRA', name: 'Đầu tư công' }
   ];
 
   constructor(
     private watchlistService: WatchlistService,
     private stockService: StockService,
     private tradeService: TradeService,
+    private botService: BotService,
     private router: Router,
     private cdr: ChangeDetectorRef
   ) {}
@@ -75,6 +83,14 @@ export class WatchlistComponent implements OnInit {
   }
 
   loadWatchlist(): void {
+    this.botService.getBreakoutQueue().subscribe({
+      next: (q) => {
+        this.breakoutRadar = q || [];
+        this.cdr.markForCheck();
+      },
+      error: () => {}
+    });
+
     this.watchlistService.getAll().subscribe({
       next: (data) => {
         if (data && data.length > 0) {
@@ -206,6 +222,22 @@ export class WatchlistComponent implements OnInit {
     this.filterItems();
   }
 
+  detectSector(symbol: string): string {
+    const sym = symbol?.toUpperCase()?.trim() || '';
+    if (['FPT', 'CMG', 'ELC', 'ITD', 'FOX'].includes(sym)) return 'TECH';
+    if (['TCB', 'VCB', 'MBB', 'STB', 'CTG', 'ACB', 'BID', 'VPB', 'HDB', 'VIB', 'TPB', 'SHB', 'MSB', 'LPB', 'EIB', 'OCB'].includes(sym)) return 'BANK';
+    if (['SSI', 'VND', 'VIX', 'HCM', 'VCI', 'MBS', 'SHS', 'FTS', 'BSI', 'CTS', 'AGR', 'ORS'].includes(sym)) return 'SEC';
+    if (['HPG', 'HSG', 'NKG', 'TLH', 'SMC', 'DGC', 'DCM', 'DPM', 'CSV', 'BFC', 'LAS'].includes(sym)) return 'STEEL';
+    if (['MWG', 'MSN', 'PNJ', 'FRT', 'DGW', 'PET', 'VNM', 'SAB', 'KDC', 'MCH'].includes(sym)) return 'RETAIL';
+    if (['VHM', 'VIC', 'VRE', 'NVL', 'PDR', 'DIG', 'DXG', 'KDH', 'NLG', 'CEO', 'HDG', 'TCH'].includes(sym)) return 'RE';
+    if (['KBC', 'IDC', 'BCM', 'SZC', 'LHG', 'VGC', 'NTC', 'D2D', 'TIP', 'SIP'].includes(sym)) return 'KCN';
+    if (['PLX', 'BSR', 'GAS', 'PVD', 'PVS', 'PVT', 'POW', 'REE', 'GEG', 'PC1', 'NT2'].includes(sym)) return 'OIL';
+    if (['GMD', 'HAH', 'VSC', 'VOS', 'PVP', 'TMS', 'SGP'].includes(sym)) return 'LOG';
+    if (['VHC', 'ANV', 'FMC', 'BAF', 'DBC', 'HAG', 'HNG', 'PAN', 'IDI'].includes(sym)) return 'AGRI';
+    if (['VCG', 'HHV', 'C4G', 'FCN', 'LCG', 'CTD', 'HBC', 'KSP', 'CII'].includes(sym)) return 'INFRA';
+    return 'TECH';
+  }
+
   private mapToView(dbItems: WatchlistItem[]): void {
     this.items = dbItems.map(item => {
       const p = item.currentPrice || item.targetPrice || 25000;
@@ -214,7 +246,7 @@ export class WatchlistComponent implements OnInit {
         id: item.id,
         symbol: item.symbol,
         exchange: item.exchange || 'HOSE',
-        sector: 'VN30',
+        sector: this.detectSector(item.symbol),
         refPrice: ref,
         ceilPrice: Math.round(ref * 1.07 / 100) * 100,
         floorPrice: Math.round(ref * 0.93 / 100) * 100,
@@ -232,6 +264,12 @@ export class WatchlistComponent implements OnInit {
     this.filterItems();
   }
 
+  filterByRadar(symbol: string): void {
+    this.searchQuery = symbol;
+    this.selectedSector = 'ALL';
+    this.filterItems();
+  }
+
   setSector(sectorId: string): void {
     this.selectedSector = sectorId;
     this.filterItems();
@@ -240,11 +278,11 @@ export class WatchlistComponent implements OnInit {
   filterItems(): void {
     let res = this.items;
     if (this.selectedSector !== 'ALL') {
-      res = res.filter(i => i.sector === this.selectedSector || (this.selectedSector === 'VN30'));
+      res = res.filter(i => i.sector === this.selectedSector);
     }
     if (this.searchQuery.trim()) {
       const q = this.searchQuery.toUpperCase().trim();
-      res = res.filter(i => i.symbol.includes(q) || i.notes.toUpperCase().includes(q));
+      res = res.filter(i => i.symbol.includes(q) || (i.notes && i.notes.toUpperCase().includes(q)));
     }
     this.filteredItems = res;
     this.cdr.markForCheck();

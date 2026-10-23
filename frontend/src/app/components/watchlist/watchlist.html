@@ -16,6 +16,27 @@
     </div>
   </div>
 
+  <!-- Breakout Radar Bar -->
+  <div class="glass-card radar-bar" *ngIf="breakoutRadar && breakoutRadar.length > 0" style="padding: 12px 18px; border: 1px solid rgba(0, 242, 254, 0.25); background: linear-gradient(135deg, rgba(10, 25, 45, 0.7), rgba(15, 30, 55, 0.8)); margin-bottom: 12px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <span style="font-size: 0.82rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 6px;">
+        ⚡ <span>RADAR RÌNH MỒI NỔ VOL OBI (LEVEL-2 DEPTH):</span>
+      </span>
+      <span class="pill pill-primary" style="font-size: 0.72rem; padding: 2px 8px;">{{ breakoutRadar.length }} Mã Đạt Chuẩn Mua</span>
+    </div>
+
+    <div style="display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px;">
+      <div *ngFor="let r of breakoutRadar" class="radar-pill-item" (click)="filterByRadar(r.symbol)"
+           style="cursor: pointer; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 8px; padding: 6px 12px; display: flex; align-items: center; gap: 8px; white-space: nowrap; transition: all 0.2s;"
+           title="Nhấn để lọc danh mục theo mã {{ r.symbol }}">
+        <strong class="symbol-tag" style="font-size: 0.85rem;">{{ r.symbol }}</strong>
+        <span class="pill pill-xs pill-green font-mono" style="font-size: 0.7rem;">{{ r.confidenceScore }}đ</span>
+        <span style="font-size: 0.78rem; color: var(--text-secondary);">Cản: <strong class="font-mono text-white">{{ r.wallPrice | number }}</strong></span>
+        <span class="font-mono font-bold" style="font-size: 0.76rem; color: #ffb300;">+{{ r.distancePercent }}%</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Sector Tabs & Legend -->
   <div class="sub-bar glass-card">
     <div class="sector-tabs">
