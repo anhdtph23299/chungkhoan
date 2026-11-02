@@ -47,6 +47,28 @@ public class StrategyService {
         "VJC", "GMD", "HAH", "GVR", "BCM"
     );
 
+    // Universe 105 mã cổ phiếu lớn nhất & thanh khoản cao nhất toàn thị trường chứng khoán Việt Nam
+    public static final List<String> EXPANDED_UNIVERSE = List.of(
+        // VN30 & Ngân hàng (18 mã)
+        "VCB", "BID", "CTG", "TCB", "MBB", "VPB", "ACB", "STB", "HDB", "TPB", "SHB", "LPB", "MSB", "OCB", "VIB", "EIB", "SSB", "NAB",
+        // Chứng khoán (12 mã)
+        "SSI", "VND", "VCI", "SHS", "HCM", "VIX", "FTS", "BSI", "CTS", "AGR", "ORS", "MBS",
+        // Thép & Vật liệu xây dựng (6 mã)
+        "HPG", "HSG", "NKG", "VGS", "TLH", "HT1",
+        // Bất động sản dân cư & Khu công nghiệp (20 mã)
+        "VHM", "VIC", "VRE", "KBC", "IDC", "DIG", "PDR", "DXG", "NLG", "KDH", "NVL", "CEO", "CII", "VCG", "CTD", "PC1", "HHV", "LCG", "SZC", "BCM",
+        // Bán lẻ, Tiêu dùng & Thủy sản (16 mã)
+        "MWG", "MSN", "VNM", "SAB", "FRT", "DGW", "PNJ", "DBC", "HAG", "KDC", "QNS", "VHC", "ANV", "IDI", "FMC", "BAF",
+        // Công nghệ & Viễn thông (4 mã)
+        "FPT", "CMG", "ELC", "CTR",
+        // Dầu khí, Năng lượng & Tiện ích (14 mã)
+        "GAS", "PVD", "PVS", "BSR", "PLX", "POW", "REE", "GEG", "HDG", "TV2", "BWE", "TDM", "NT2", "PGV",
+        // Hóa chất, Phân bón & Cao su (8 mã)
+        "DGC", "DCM", "DPM", "CSV", "BFC", "GVR", "PHR", "DRC",
+        // Cảng biển, Vận tải & Dệt may (7 mã)
+        "VJC", "HVN", "GMD", "HAH", "VOS", "PVT", "TNG"
+    );
+
     // CPU Throttling: Giới hạn cố định tối đa 4 luồng xử lý đồng thời (<= 25% CPU trên máy 12 Cores)
     // để dành 8-9 Cores (75% CPU) cho các ứng dụng và dự án khác của người dùng
     private static final int MAX_CONCURRENT_THREADS = 4;
@@ -60,11 +82,8 @@ public class StrategyService {
         }
     );
 
-    /**
-     * Quét song song 50 cổ phiếu theo lô 4 luồng kiểm soát tải CPU
-     */
-    public List<StockScanResult> scanAllStocks() {
-        List<CompletableFuture<StockScanResult>> futures = FOCUS_SYMBOLS.stream()
+    public List<StockScanResult> scanSymbols(List<String> symbols) {
+        List<CompletableFuture<StockScanResult>> futures = symbols.stream()
             .map(symbol -> CompletableFuture.supplyAsync(() -> {
                 try {
                     return evaluateSymbol(symbol);
@@ -79,6 +98,20 @@ public class StrategyService {
             .map(CompletableFuture::join)
             .filter(Objects::nonNull)
             .toList();
+    }
+
+    /**
+     * Quét song song 50 cổ phiếu theo lô 4 luồng kiểm soát tải CPU
+     */
+    public List<StockScanResult> scanAllStocks() {
+        return scanSymbols(FOCUS_SYMBOLS);
+    }
+
+    /**
+     * Quét mở rộng quy mô lớn 105 mã toàn thị trường
+     */
+    public List<StockScanResult> scanLargeUniverse() {
+        return scanSymbols(EXPANDED_UNIVERSE);
     }
 
     public List<StockScanResult> scanByStrategy(String strategyType) {

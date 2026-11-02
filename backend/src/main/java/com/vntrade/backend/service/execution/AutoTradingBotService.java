@@ -397,17 +397,13 @@ public class AutoTradingBotService {
             addLog("🎉 ĐÃ ĐẠT MỤC TIÊU KIẾM TIỀN HÔM NAY (+" + todayRealizedPnl + " đ). Bot bảo toàn thành quả.");
         }
 
-        // 4.5b. QUY TẮC LÃO LÀNG: KIỂM SOÁT PHA THỊ TRƯỜNG CHUNG VN-INDEX
-        try {
-            var regime = marketRegimeDetectionService.detectMarketRegime();
-            if (regime != null && "DOWNTREND_DEFENSE".equalsIgnoreCase(regime.getCurrentRegime())) {
-                if (cycleScanCount % 4 == 0) {
-                    addLog("🛡️ [QUY TẮC LÃO LÀNG - VN-INDEX PHÒNG THỦ] Thị trường chung đang trong nhịp Downtrend/Phân phối mạnh. Già làng ôm tiền mặt, bot KHÓA 100% lệnh mở mới!");
-                }
-                return;
+        // 4.5b. QUY TẮC LÃO LÀNG: KIỂM SOÁT PHA THỊ TRƯỜNG CHUNG VN-INDEX (O'Neil & Minervini)
+        var marketRegime = marketRegimeDetectionService.detectMarketRegime();
+        if (marketRegime != null && ("DOWNTREND_DEFENSE".equalsIgnoreCase(marketRegime.getCurrentRegime()) || marketRegime.getRecommendedMaxExposure().compareTo(BigDecimal.ZERO) <= 0)) {
+            if (cycleScanCount % 4 == 0) {
+                addLog("🛡️ [LÃO LÀNG - PHÒNG THỦ DOWNTREND] " + marketRegime.getRegimeDisplayName() + " (Độ rộng: " + marketRegime.getDistributionDaysCount() + " trụ đỏ). Khóa 100% lệnh mở mới, bảo toàn tiền mặt tối đa!");
             }
-        } catch (Exception e) {
-            log.debug("Lỗi kiểm tra chế độ thị trường: {}", e.getMessage());
+            return;
         }
 
         // 4.6. Kiểm tra khung giờ giao dịch chính thức của sàn HOSE/HNX (09:00 - 11:30 và 13:00 - 14:45)
@@ -459,6 +455,45 @@ public class AutoTradingBotService {
 
                 boolean alreadyHolding = openTrades.stream().anyMatch(t -> t.getSymbol().equalsIgnoreCase(scan.getSymbol()));
                 if (alreadyHolding) continue;
+
+                // 1.0a. QUY TẮC LÃO LÀNG: RE-ENTRY COOLDOWN (Chống bẫy tái nghiện)
+                // Cấm mua lại mã vừa tất toán trong vòng 3 ngày gần nhất để tránh bẫy đu đỉnh nhịp rơi
+                boolean inCooldown = tradeRepository.findAll().stream()
+                    .filter(t -> "closed".equalsIgnoreCase(t.getStatus()) && t.getSymbol().equalsIgnoreCase(scan.getSymbol()))
+                    .anyMatch(t -> t.getCloseDate() != null && java.time.temporal.ChronoUnit.DAYS.between(t.getCloseDate(), LocalDate.now()) < 3);
+                if (inCooldown) {
+                    addLog(String.format("🛡️ [LÃO LÀNG COOLDOWN] Bỏ qua %s: Vừa tất toán trong 3 ngày qua. Khóa mua lại để tránh bẫy tái nghiện đu đọt!", scan.getSymbol()));
+                    continue;
+                }
+
+                // 1.0b. QUY TẮC KIM TỰ THÁP LÃNG LÀNG (Minervini Progressive Exposure - Pilot Buy)
+                // Vị thế 1: Pilot Buy (thăm dò 25-30% NAV).
+                // Vị thế 2 trở đi: CHỈ MỞ KHI danh mục đã có ít nhất 1 mã có đệm lãi an toàn (>= +2.0%).
+                if (openTrades.size() >= 1) {
+                    boolean hasProfitCushion = openTrades.stream().anyMatch(t ->
+                        t.getPnlPercent() != null && t.getPnlPercent().compareTo(BigDecimal.valueOf(2.0)) >= 0
+                    );
+                    if (!hasProfitCushion) {
+                        if (cycleScanCount % 3 == 0) {
+                            addLog(String.format("🛡️ [MINERVINI PROGRESSIVE EXPOSURE] Tạm dừng mở thêm %s: Danh mục đang có %d mã nhưng CHƯA CÓ MÃ NÀO CÓ ĐỆM LÃI (>= +2.0%%). Không được phép tăng rủi ro khi thị trường chưa cho quả ngọt!",
+                                scan.getSymbol(), openTrades.size()));
+                        }
+                        continue;
+                    }
+                }
+
+                // 1.0c. QUẢN TRỊ TỶ TRỌNG THEO PHA THỊ TRƯỜNG (Market Regime Max Exposure)
+                if (marketRegime != null && marketRegime.getRecommendedMaxExposure() != null) {
+                    BigDecimal maxAllowedInvested = accountCapital.multiply(marketRegime.getRecommendedMaxExposure()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+                    BigDecimal curInv = openTrades.stream()
+                        .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    if (curInv.compareTo(maxAllowedInvested) >= 0) {
+                        addLog(String.format("🛡️ [TRẦN TỶ TRỌNG THỊ TRƯỜNG] Bỏ qua %s: Chế độ '%s' chỉ cho phép giải ngân tối đa %.0f%% NAV (%,.0f đ). Danh mục hiện tại %,.0f đ đã chạm trần!",
+                            scan.getSymbol(), marketRegime.getCurrentRegime(), marketRegime.getRecommendedMaxExposure().doubleValue(), maxAllowedInvested.doubleValue(), curInv.doubleValue()));
+                        continue;
+                    }
+                }
 
                 // =========================================================================
                 // 1. TẦNG QUYẾT ĐỊNH CỐT LÕI (CORE EXECUTION): T1 TREND FILTER + DEFCON-1
@@ -760,7 +795,7 @@ public class AutoTradingBotService {
                 }
 
                 // 2. GẶT HÁI LỢI NHUẬN LÃO LÀNG (Dan Zanger / Mark Minervini): Chốt lời 50% khi lãi >= +8.0%
-                if (pnlPct.compareTo(BigDecimal.valueOf(8.0)) >= 0
+                if (pnlPct.compareTo(BigDecimal.valueOf(6.0)) >= 0
                     && (trade.getPartialClosedQuantity() == null || trade.getPartialClosedQuantity() == 0)
                     && trade.getQuantity() >= 200) {
 
@@ -1124,10 +1159,12 @@ public class AutoTradingBotService {
 
     private void checkOversoldBounceOpportunity(List<Trade> openTrades) {
         try {
+            if (openTrades.size() >= 2) return; // Khống chế tối đa 1-2 vị thế bắt đáy để bảo đảm an toàn tuyệt đối
+
             OversoldBounceDto bounce = oversoldBounceDetectorService.scanOversoldBounceCandidates();
             if (bounce != null && bounce.getCandidates() != null && !bounce.getCandidates().isEmpty()) {
                 var topCandidate = bounce.getCandidates().stream()
-                    .filter(c -> c.getBounceScore() >= 80)
+                    .filter(c -> c.getBounceScore() >= 85) // Điểm cao: Hoảng loạn cực độ RSI < 30 + Pinbar/Hammer
                     .findFirst()
                     .orElse(null);
 
@@ -1135,11 +1172,51 @@ public class AutoTradingBotService {
                     boolean alreadyHolding = openTrades.stream()
                         .anyMatch(t -> t.getSymbol().equalsIgnoreCase(topCandidate.getSymbol()));
                     if (!alreadyHolding) {
-                        addLog(String.format("🎯 [PHÁT HIỆN BẮT ĐÁY HOẢNG LOẠN] %s: RSI=%.1f | Tín hiệu: %s (Điểm hồi phục: %dđ/100). Đủ tiêu chuẩn dò đáy chiến thuật!",
-                            topCandidate.getSymbol(),
-                            topCandidate.getRsi14() != null ? topCandidate.getRsi14().doubleValue() : 30.0,
-                            topCandidate.getDivergenceSignal(),
-                            topCandidate.getBounceScore()));
+                        // Kiểm tra Cooldown
+                        boolean inCooldown = tradeRepository.findAll().stream()
+                            .filter(t -> "closed".equalsIgnoreCase(t.getStatus()) && t.getSymbol().equalsIgnoreCase(topCandidate.getSymbol()))
+                            .anyMatch(t -> t.getCloseDate() != null && java.time.temporal.ChronoUnit.DAYS.between(t.getCloseDate(), LocalDate.now()) < 3);
+                        if (inCooldown) return;
+
+                        // Tính tiền mặt khả dụng
+                        BigDecimal currentInvested = openTrades.stream()
+                            .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                        BigDecimal availableCash = accountCapital.add(todayRealizedPnl).subtract(currentInvested);
+
+                        // Giải ngân tỷ trọng chiến thuật thăm dò: 15% - 20% NAV
+                        BigDecimal tacticalBudget = accountCapital.multiply(BigDecimal.valueOf(0.18)).min(availableCash);
+                        if (tacticalBudget.compareTo(BigDecimal.valueOf(3_000_000)) >= 0) {
+                            int shares = tacticalBudget.divide(topCandidate.getCurrentPrice(), 0, RoundingMode.FLOOR).intValue();
+                            shares = (shares / 100) * 100; // Làm tròn lô 100 HOSE
+                            if (shares >= 100) {
+                                BigDecimal entryPrice = topCandidate.getCurrentPrice();
+                                BigDecimal sl = topCandidate.getTacticalStopLoss() != null ? topCandidate.getTacticalStopLoss() : entryPrice.multiply(BigDecimal.valueOf(0.96));
+                                BigDecimal tp = topCandidate.getTacticalTargetPrice() != null ? topCandidate.getTacticalTargetPrice() : entryPrice.multiply(BigDecimal.valueOf(1.08));
+
+                                TradeRequest req = TradeRequest.builder()
+                                    .symbol(topCandidate.getSymbol())
+                                    .type("buy")
+                                    .price(entryPrice)
+                                    .quantity(shares)
+                                    .strategy("TACTICAL_OVERSOLD_REBOUND")
+                                    .stopLoss(sl)
+                                    .takeProfit(tp)
+                                    .reason(String.format("🎯 Săn Bắt Đáy Hoảng Loạn: RSI=%.1f | %s (Điểm hồi phục: %dđ/100). Đón nhịp hồi kỹ thuật T+2.5!",
+                                        topCandidate.getRsi14() != null ? topCandidate.getRsi14().doubleValue() : 28.0,
+                                        topCandidate.getDivergenceSignal(),
+                                        topCandidate.getBounceScore()))
+                                    .build();
+
+                                Trade openedTrade = tradeService.createTrade(req);
+                                todayTradesCount++;
+                                addLog(String.format("🔥 [KÍCH HOẠT BẮT ĐÁY HOẢNG LOẠN] Mua %d cp %s giá %,.0f đ | SL: %,.0f đ | TP: %,.0f đ. Đón sóng hồi T+2.5!",
+                                    shares, topCandidate.getSymbol(), entryPrice.doubleValue(), sl.doubleValue(), tp.doubleValue()));
+                                try {
+                                    sseStreamService.broadcast("BOT_TRADE_OPENED", openedTrade);
+                                } catch (Exception ignored) {}
+                            }
+                        }
                     }
                 }
             }

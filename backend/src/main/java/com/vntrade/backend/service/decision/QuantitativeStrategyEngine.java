@@ -59,20 +59,45 @@ public class QuantitativeStrategyEngine {
             : BigDecimal.ONE;
 
         // 1. Scoring Factors - QUY TẮC LÃO LÀNG (Minervini & VSA)
-        // 1.1. Trend Template: Phạt nặng cổ phiếu downtrend, chỉ ưu tiên cổ phiếu uptrend (Giá > EMA20 > SMA50)
+        // 1.1. Trend Template chuẩn Minervini: Phạt nặng cổ phiếu dưới MA50, chỉ ưu tiên Stage 2 Uptrend (Giá > EMA20 > SMA50 > SMA200)
         int trendScore = 0;
+        boolean inStage2Uptrend = price.compareTo(curSma50) > 0 && curSma50.compareTo(curSma200) > 0 && curEma20.compareTo(curSma50) > 0;
         boolean inMajorUptrend = price.compareTo(curSma50) > 0 && curEma20.compareTo(curSma50) > 0;
-        boolean inDowntrend = price.compareTo(curSma50) < 0 && price.compareTo(curSma200) < 0;
+        boolean belowMa50 = price.compareTo(curSma50) < 0;
+        boolean inDowntrend = belowMa50 && price.compareTo(curSma200) < 0;
 
-        if (inMajorUptrend) {
-            trendScore += 25; // Xu hướng tăng mạnh chuẩn Minervini
+        if (inStage2Uptrend) {
+            trendScore += 30; // Siêu cổ phiếu kênh trên chuẩn Minervini Stage 2
             if (price.compareTo(curEma20) > 0) trendScore += 5;
-        } else if (price.compareTo(curEma20) > 0 && price.compareTo(curSma50) >= 0) {
-            trendScore += 15;
-        } else if (inDowntrend) {
-            trendScore = 0; // Tuyệt đối không ưu tiên cổ phiếu đang cắm đầu rơi
+        } else if (inMajorUptrend) {
+            trendScore += 20;
+        } else if (price.compareTo(curEma20) > 0 && !belowMa50) {
+            trendScore += 10;
+        } else if (belowMa50) {
+            trendScore = 0; // Cổ phiếu dưới MA50 tuyệt đối không mua Breakout vì cản trên quá dày
         } else {
             trendScore += 5;
+        }
+
+        // 1.1b. Lọc cổ phiếu Dẫn dắt (Leader) vs Cổ phiếu Yếu (Laggard) theo khoảng cách đỉnh 60 phiên
+        BigDecimal high60d = BigDecimal.ZERO;
+        int lookback = Math.min(60, candles.size());
+        for (int i = candles.size() - lookback; i < candles.size(); i++) {
+            if (candles.get(i).getHigh() != null && candles.get(i).getHigh().compareTo(high60d) > 0) {
+                high60d = candles.get(i).getHigh();
+            }
+        }
+        double distFromHigh = high60d.compareTo(BigDecimal.ZERO) > 0
+            ? (high60d.subtract(price)).divide(high60d, 4, RoundingMode.HALF_UP).doubleValue() * 100
+            : 50.0;
+
+        int leaderScore = 0;
+        if (distFromHigh <= 12.0) {
+            leaderScore += 15; // Cổ phiếu kênh trên cận đỉnh: Cản mỏng, xác suất nổ siêu sóng cao nhất
+        } else if (distFromHigh <= 20.0) {
+            leaderScore += 8;
+        } else if (distFromHigh > 30.0) {
+            leaderScore -= 15; // Cổ phiếu rơi sâu, lượng đu đọt phía trên cực lớn -> phạt nặng
         }
 
         // 1.2. VSA Cạn Cung (Volume Dry-Up): Soi 4 phiên trước xem có phiên cạn kiệt thanh khoản không
@@ -138,7 +163,7 @@ public class QuantitativeStrategyEngine {
         if (rrRatio >= 2.5) riskRewardScore += 20;
         else if (rrRatio >= 1.8) riskRewardScore += 12;
 
-        int totalScore = trendScore + momentumScore + volumeScore + riskRewardScore;
+        int totalScore = trendScore + momentumScore + volumeScore + riskRewardScore + leaderScore;
         totalScore = Math.min(100, Math.max(15, totalScore));
 
         // Bẫy FOMO trần tím T+2.5: Cổ phiếu tăng trần > +5.8% trong ngày tuyệt đối không mua đuổi

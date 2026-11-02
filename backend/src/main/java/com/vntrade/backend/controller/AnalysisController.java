@@ -138,6 +138,14 @@ public class AnalysisController {
         return ResponseEntity.ok(strategyService.scanByStrategy(strategy));
     }
 
+    /**
+     * Quét quy mô lớn 105 mã toàn thị trường chứng khoán Việt Nam (VN30 + MidCap + SMCap dẫn sóng)
+     */
+    @GetMapping("/scan-large")
+    public ResponseEntity<List<StockScanResult>> scanLargeUniverse() {
+        return ResponseEntity.ok(strategyService.scanLargeUniverse());
+    }
+
     @GetMapping("/symbol/{symbol}")
     public ResponseEntity<StockScanResult> evaluateSymbol(@PathVariable String symbol) {
         return ResponseEntity.ok(strategyService.evaluateSymbol(symbol));
