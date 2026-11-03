@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, ElementRef, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { BotService, BotStatus, RrgData, SignalScreener, BreakoutItem, PerformanceComparison, PreMarketSentiment, OversoldBounce } from '../../services/bot';
+import { BotService, BotStatus, RrgData, SignalScreener, BreakoutItem, PerformanceComparison, PreMarketSentiment, OversoldBounce, TomorrowBattlePlan } from '../../services/bot';
 import { TradeService, Trade } from '../../services/trade';
 import { Subscription } from 'rxjs';
 
@@ -40,6 +40,7 @@ export class BotComponent implements OnInit, OnDestroy {
   comparison?: PerformanceComparison;
   preMarket?: PreMarketSentiment;
   oversoldBounce?: OversoldBounce;
+  tomorrowPlan?: TomorrowBattlePlan;
   activeTab: 'OVERVIEW' | 'RADAR' | 'BOUNCE' = 'OVERVIEW';
 
   // Chế độ xem & Bộ lọc theo ngày cho Bảng Hiệu Suất
@@ -112,6 +113,17 @@ export class BotComponent implements OnInit, OnDestroy {
     this.loadComparison();
     this.loadPreMarketSentiment();
     this.loadOversoldBounce();
+    this.loadTomorrowPlan();
+  }
+
+  loadTomorrowPlan(): void {
+    this.botService.getTomorrowBattlePlan().subscribe({
+      next: (res) => {
+        this.tomorrowPlan = res;
+        this.cdr.markForCheck();
+      },
+      error: (e) => console.debug('Error getting tomorrow battle plan', e)
+    });
   }
 
   setActiveTab(tab: 'OVERVIEW' | 'RADAR' | 'BOUNCE'): void {
@@ -269,6 +281,7 @@ export class BotComponent implements OnInit, OnDestroy {
         this.isLoading = false;
         this.loadStatusOnly();
         this.loadPositions();
+        this.loadTomorrowPlan();
         this.cdr.markForCheck();
       },
       error: (err) => {

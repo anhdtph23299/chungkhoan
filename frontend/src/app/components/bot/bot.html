@@ -186,6 +186,116 @@
   </div>
 
   <ng-container *ngIf="activeTab === 'OVERVIEW'">
+  <!-- KẾ HOẠCH TÁC CHIẾN KIẾM TIỀN (ĐỘNG CƠ KÉP: CƠ SỞ + PHÁI SINH T+0) -->
+  <div class="card glass-card" *ngIf="tomorrowPlan" style="margin-bottom: 20px; border: 1px solid rgba(16, 185, 129, 0.45); background: linear-gradient(145deg, rgba(6, 78, 59, 0.25), rgba(15, 23, 42, 0.92));">
+    <div class="card-header" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 12px;">
+      <div class="card-title-group">
+        <span class="card-title-icon">🔥</span>
+        <div>
+          <h2 class="card-title text-emerald">{{ tomorrowPlan.sessionTitle }}</h2>
+          <p class="card-subtitle">
+            Chế độ thị trường: <strong class="text-gold">{{ tomorrowPlan.marketRegimeDisplay }}</strong> |
+            VN-Index: <strong>{{ tomorrowPlan.vnIndexPrice | number:'1.2-2' }}</strong> ({{ tomorrowPlan.vnIndexChangePercent | number:'1.2-2' }}%) |
+            VN30F1M: <strong class="text-cyan">{{ tomorrowPlan.vn30FuturesPrice | number:'1.1-1' }}</strong> (Basis: <strong class="text-emerald">{{ tomorrowPlan.vn30Basis > 0 ? '+' : '' }}{{ tomorrowPlan.vn30Basis | number:'1.1-1' }}</strong>)
+          </p>
+        </div>
+      </div>
+      <span class="mode-pill paper">⚡ ĐỘNG CƠ KÉP T+0 & CƠ SỞ</span>
+    </div>
+
+    <div style="padding: 14px 18px;">
+      <div style="background: rgba(245, 158, 11, 0.12); border-left: 4px solid #f59e0b; padding: 10px 14px; border-radius: 6px; margin-bottom: 10px; font-size: 13.5px;">
+        <strong>🦈 {{ tomorrowPlan.smartMoneyFootprint }}</strong>
+      </div>
+      <div style="background: rgba(16, 185, 129, 0.12); border-left: 4px solid #10b981; padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; font-size: 13.5px;">
+        <strong>💰 {{ tomorrowPlan.masterStrategyVerdict }}</strong>
+      </div>
+
+      <!-- ĐỘNG CƠ 1: PHÁI SINH VN30F1M T+0 -->
+      <div *ngIf="tomorrowPlan.futuresT0Plan as fPlan" style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+          <strong class="text-cyan" style="font-size: 14.5px;">⚡ ĐỘNG CƠ 1: PHÁI SINH {{ fPlan.symbol }} T+0 ({{ fPlan.strategyName }}) — Độ tin cậy: {{ fPlan.confidenceScore }}/100</strong>
+          <span class="badge-t25 ready" style="font-weight: 700;">
+            TÍN HIỆU: {{ fPlan.activeSignal }} @ {{ fPlan.entryPrice | number:'1.1-1' }} | SL: {{ fPlan.stopLossPrice | number:'1.1-1' }} | TP1 (Chốt 50%): {{ fPlan.takeProfit1 | number:'1.1-1' }} | TP2: {{ fPlan.takeProfit2 | number:'1.1-1' }}
+          </span>
+        </div>
+        <div style="font-size: 13px; color: #cbd5e1; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px;">
+          <div>🟢 <strong>{{ fPlan.longScenarioTrigger }}</strong></div>
+          <div>🔴 <strong>{{ fPlan.shortScenarioTrigger }}</strong></div>
+        </div>
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.1); font-size: 13px; display: flex; justify-content: space-between; flex-wrap: wrap;">
+          <span>Trạng thái vị thế T+0: <strong class="text-gold">{{ fPlan.activePositionSummary }}</strong></span>
+          <span>Lợi nhuận mục tiêu (2 HĐ): <strong class="text-emerald">+{{ fPlan.expectedProfit2ContractsVnd | number:'1.0-0' }} đ</strong></span>
+        </div>
+      </div>
+
+      <!-- ĐỘNG CƠ 2: TOP CỔ PHIẾU KHÁNG BÃO & BẮT ĐÁY RÚT CHÂN -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px;">
+        <!-- Cột 2A: Siêu Cổ Phiếu Kháng Bão -->
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h3 style="font-size: 14px; margin: 0 0 10px 0;" class="text-emerald">🚀 TOP SIÊU CỔ PHIẾU KHÁNG BÃO (XANH NGƯỢC VN-INDEX)</h3>
+          <table class="data-table" style="font-size: 12.5px;">
+            <thead>
+              <tr>
+                <th>MÃ</th>
+                <th>GIÁ / %</th>
+                <th>ALPHA VNI</th>
+                <th>CHỐT 50% (+6%)</th>
+                <th>MỤC TIÊU / SL</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let s of tomorrowPlan.antiMarketLeaders">
+                <td class="font-bold text-cyan">{{ s.symbol }}</td>
+                <td class="mono-num">{{ s.currentPrice | number:'1.0-0' }} ({{ s.changePercent > 0 ? '+' : '' }}{{ s.changePercent }}%)</td>
+                <td class="mono-num text-emerald font-bold">+{{ s.alphaVsVnIndex }}%</td>
+                <td class="mono-num text-gold font-bold">{{ s.harvest6PercentPrice | number:'1.0-0' }}</td>
+                <td class="mono-num">
+                  <span class="text-green">{{ s.targetPrice | number:'1.0-0' }}</span> / <span class="text-red">{{ s.stopLoss | number:'1.0-0' }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Cột 2B: Top Bắt Đáy Rút Chân Quá Bán -->
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px;">
+          <h3 style="font-size: 14px; margin: 0 0 10px 0;" class="text-gold">🎯 TOP BẮT ĐÁY RÚT CHÂN QUÁ BÁN (OVERSOLD SPRING)</h3>
+          <table class="data-table" style="font-size: 12.5px;">
+            <thead>
+              <tr>
+                <th>MÃ</th>
+                <th>GIÁ</th>
+                <th>RSI / ĐIỂM</th>
+                <th>CHỐT 50% (+6%)</th>
+                <th>MỤC TIÊU / SL</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let b of tomorrowPlan.oversoldBouncePicks">
+                <td class="font-bold text-cyan">{{ b.symbol }}</td>
+                <td class="mono-num">{{ b.currentPrice | number:'1.0-0' }}</td>
+                <td class="mono-num"><span class="text-red">{{ b.rsi }}</span> ({{ b.score }}/100)</td>
+                <td class="mono-num text-gold font-bold">{{ b.harvest6PercentPrice | number:'1.0-0' }}</td>
+                <td class="mono-num">
+                  <span class="text-green">{{ b.targetPrice | number:'1.0-0' }}</span> / <span class="text-red">{{ b.stopLoss | number:'1.0-0' }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- KẾ HOẠCH HÀNH ĐỘNG VỊ THẾ ĐANG GIỮ -->
+      <div *ngIf="tomorrowPlan.openPositionActions?.length" style="margin-top: 12px; background: rgba(56, 189, 248, 0.08); border-radius: 8px; padding: 10px 14px; font-size: 13px;">
+        <div *ngFor="let act of tomorrowPlan.openPositionActions">
+          📌 <strong>HÀNH ĐỘNG VỊ THẾ {{ act.symbol }} ({{ act.quantity }} cp @ {{ act.entryPrice | number:'1.0-0' }} đ | {{ act.settlementStatus }}):</strong>
+          {{ act.actionInstruction }}
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Main Grid Content: Positions & Live Terminal -->
   <div class="bot-content-grid">
     <!-- Left Section: Open Positions & Signals -->

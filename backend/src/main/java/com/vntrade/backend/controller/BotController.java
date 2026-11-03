@@ -88,6 +88,17 @@ public class BotController {
         status.put("currentNav", currentNav);
         status.put("cashRatioPercent", cashRatio);
         status.put("stockRatioPercent", stockRatio);
+        try {
+            var futCfg = futuresTradingService.getBotConfig();
+            var futOpen = futuresTradingService.getOpenPositions();
+            BigDecimal futOpenPnl = futOpen.stream()
+                .map(p -> p.getNetPnlVnd() != null ? p.getNetPnlVnd() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            status.put("futuresRealizedPnl", futCfg.getTodayRealizedPnlVnd());
+            status.put("futuresUnrealizedPnl", futOpenPnl);
+            status.put("futuresOpenPositionsCount", futOpen.size());
+            status.put("futuresOpenPositions", futOpen);
+        } catch (Exception ignored) {}
         return ResponseEntity.ok(status);
     }
 

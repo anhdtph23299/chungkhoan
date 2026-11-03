@@ -227,6 +227,45 @@ public class VN30FuturesTradingService {
                     continue;
                 }
 
+                // 1.3a. GIÁP HÒA VỐN LÃO LÀNG (Break-Even Shield khi lãi >= +2.0 điểm)
+                if (diff.compareTo(BigDecimal.valueOf(2.0)) >= 0) {
+                    if (isLong) {
+                        BigDecimal breakEvenPlus = VN30FuturesStrategyEngine.roundToFuturesTick(pos.getEntryPrice().add(BigDecimal.valueOf(0.4)));
+                        if (pos.getStopLossPrice().compareTo(breakEvenPlus) < 0) {
+                            pos.setStopLossPrice(breakEvenPlus);
+                            addLog(String.format("🛡️ [GIÁP HÒA VỐN T+0] Dời SL vị thế LONG %s lên %.1f (+0.4 pts trên giá vốn). Khóa rủi ro thua lỗ 100%%!",
+                                pos.getId(), breakEvenPlus.doubleValue()));
+                        }
+                    } else {
+                        BigDecimal breakEvenPlus = VN30FuturesStrategyEngine.roundToFuturesTick(pos.getEntryPrice().subtract(BigDecimal.valueOf(0.4)));
+                        if (pos.getStopLossPrice().compareTo(breakEvenPlus) > 0) {
+                            pos.setStopLossPrice(breakEvenPlus);
+                            addLog(String.format("🛡️ [GIÁP HÒA VỐN T+0] Dời SL vị thế SHORT %s xuống %.1f (+0.4 pts dưới giá vốn). Khóa rủi ro thua lỗ 100%%!",
+                                pos.getId(), breakEvenPlus.doubleValue()));
+                        }
+                    }
+                }
+
+                // 1.3b. CHỐT LỜI TỪNG PHẦN 2 GIAI ĐOẠN (Chốt 50% HĐ khi lãi >= +3.0 điểm = +300k/HĐ)
+                if (pos.getContracts() >= 2 && diff.compareTo(BigDecimal.valueOf(3.0)) >= 0) {
+                    int harvestQty = pos.getContracts() / 2;
+                    int remainQty = pos.getContracts() - harvestQty;
+                    BigDecimal partialGross = diff.multiply(POINT_MULTIPLIER).multiply(BigDecimal.valueOf(harvestQty)).setScale(0, RoundingMode.HALF_UP);
+                    BigDecimal partialFee = ROUNDTRIP_FEE_PER_CONTRACT.multiply(BigDecimal.valueOf(harvestQty));
+                    BigDecimal partialNet = partialGross.subtract(partialFee);
+
+                    pos.setContracts(remainQty);
+                    pos.setFeesVnd(ROUNDTRIP_FEE_PER_CONTRACT.multiply(BigDecimal.valueOf(remainQty)));
+                    pos.setMarginUsed(pos.getEntryPrice().multiply(POINT_MULTIPLIER).multiply(MARGIN_RATE).multiply(BigDecimal.valueOf(remainQty)).setScale(0, RoundingMode.HALF_UP));
+
+                    todayRealizedPnlVnd = todayRealizedPnlVnd.add(partialNet);
+                    todayPnlPoints = todayPnlPoints.add(diff);
+
+                    addLog(String.format("🌾 [GẶT HÁI TIỀN TƯƠI T+0] Đã chốt 50%% (%d HĐ %s @ %.1f) đút túi +%s đ (+%.1f pts). Giữ %d HĐ còn lại gồng tới TP %.1f!",
+                        harvestQty, pos.getSide(), currentPrice.doubleValue(), String.format("%,.0f", partialNet.doubleValue()),
+                        diff.doubleValue(), remainQty, pos.getTakeProfitPrice().doubleValue()));
+                }
+
                 // Kiểm tra Kích hoạt & Dời Trailing Stop
                 if (diff.compareTo(trailingStopTrigger) >= 0) {
                     if (isLong) {
@@ -313,6 +352,37 @@ public class VN30FuturesTradingService {
         botLogs.add(0, timedMsg);
         if (botLogs.size() > 50) botLogs.remove(botLogs.size() - 1);
         log.info("FuturesBot: {}", message);
+    }
+
+    /**
+     * Kích hoạt quét và khớp lệnh Phái sinh T+0 chủ động (phối hợp cùng Bot Cơ sở)
+     */
+    public synchronized FuturesPositionDto executeTacticalSignalScan() {
+        try {
+            FuturesQuoteDto quote = strategyEngine.getCurrentQuote();
+            for (FuturesPositionDto pos : openPositions.values()) {
+                updatePositionPnL(pos, quote.getCurrentPrice());
+            }
+            if (!autoTrading || !openPositions.isEmpty()) {
+                return openPositions.values().stream().findFirst().orElse(null);
+            }
+            FuturesSignalDto signal = strategyEngine.generateSignal();
+            if (signal != null && signal.getConfidenceScore() >= 75) {
+                if ("LONG".equalsIgnoreCase(signal.getAction()) || "SHORT".equalsIgnoreCase(signal.getAction())) {
+                    return openPosition(
+                        signal.getAction(),
+                        maxContracts,
+                        signal.getEntryPrice(),
+                        signal.getStopLossPrice(),
+                        signal.getTakeProfit1(),
+                        "[" + signal.getStrategyName() + "] " + signal.getRecommendationReason()
+                    );
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Lỗi quét chiến thuật phái sinh T+0: {}", e.getMessage());
+        }
+        return null;
     }
 
     public void resetAll() {

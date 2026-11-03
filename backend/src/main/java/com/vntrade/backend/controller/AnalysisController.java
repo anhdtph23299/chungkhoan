@@ -47,6 +47,12 @@ public class AnalysisController {
     private final com.vntrade.backend.service.calculation.RelativeRotationGraphService relativeRotationGraphService;
     private final com.vntrade.backend.service.decision.PreMarketSentimentService preMarketSentimentService;
     private final com.vntrade.backend.service.decision.OversoldBounceDetectorService oversoldBounceDetectorService;
+    private final com.vntrade.backend.service.decision.TomorrowBattlePlanService tomorrowBattlePlanService;
+
+    @GetMapping("/tomorrow-plan")
+    public ResponseEntity<com.vntrade.backend.dto.TomorrowBattlePlanDto> getTomorrowBattlePlan() {
+        return ResponseEntity.ok(tomorrowBattlePlanService.generateBattlePlan());
+    }
 
     @GetMapping("/pre-market-sentiment")
     public ResponseEntity<com.vntrade.backend.dto.PreMarketSentimentDto> getPreMarketSentiment() {

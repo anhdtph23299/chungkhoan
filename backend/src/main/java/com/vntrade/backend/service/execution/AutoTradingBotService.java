@@ -61,6 +61,7 @@ public class AutoTradingBotService {
     private final BotDecisionAuditService botDecisionAuditService;
     private final com.vntrade.backend.service.decision.OversoldBounceDetectorService oversoldBounceDetectorService;
     private final com.vntrade.backend.service.decision.MarketRegimeDetectionService marketRegimeDetectionService;
+    private final com.vntrade.backend.service.futures.VN30FuturesTradingService futuresTradingService;
 
     // Bot Configuration & State
     private boolean isRunning = true;
@@ -102,10 +103,21 @@ public class AutoTradingBotService {
 
     public void executeManualCycle() {
         manageOpenPositions();
-        refreshBreakoutWatchlist();
         List<Trade> openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
+        List<StockScanResult> scans = strategyService.scanAllStocks();
+        updateBreakoutWatchlist(scans, openTrades);
         checkOversoldBounceOpportunity(openTrades);
-        addLog(String.format("⚡ [QUÉT THỦ CÔNG] Đã làm mới dữ liệu và cập nhật Radar bứt phá (%d mã theo dõi).", breakoutWatchlist.size()));
+        openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
+        checkAntiMarketLeaderOpportunity(openTrades, scans);
+        try {
+            var futPos = futuresTradingService.executeTacticalSignalScan();
+            if (futPos != null) {
+                addLog(String.format("⚡ [ĐỘNG CƠ PHÁI SINH T+0] Đang giữ vị thế %s %d HĐ VN30F1M @ %.1f (Hiện tại: %.1f | PnL: %+,.0f đ).",
+                    futPos.getSide(), futPos.getContracts(), futPos.getEntryPrice().doubleValue(),
+                    futPos.getCurrentPrice().doubleValue(), futPos.getNetPnlVnd().doubleValue()));
+            }
+        } catch (Exception ignored) {}
+        addLog(String.format("⚡ [QUÉT THỦ CÔNG ĐỘNG CƠ KÉP] Đã cập nhật Radar cơ sở (%d mã) & Phái sinh T+0.", breakoutWatchlist.size()));
     }
 
     @jakarta.annotation.PostConstruct
@@ -372,51 +384,15 @@ public class AutoTradingBotService {
         // 1. Quản trị và chốt lời / cắt lỗ tự động cho các vị thế đang mở
         manageOpenPositions();
 
-        // 2. Kiểm tra Cầu chì phòng hộ sụp đổ thị trường (DEFCON-1 Circuit Breaker)
-        MarketCrashProtectionDto crashStatus = crashProtectionService.evaluateMarketCircuitBreaker();
-        if (!crashStatus.isAllowNewPurchases()) {
-            if (botDecisionAuditService != null) {
-                botDecisionAuditService.recordDecision("VNINDEX", "REJECTED_FILTER", BigDecimal.ZERO, "DEFCON_CRASH", crashStatus.getCircuitBreakerMessage(), 0);
-            }
-            addLog("🚨 [DEFCON-1 PHÒNG HỘ THỊ TRƯỜNG] " + crashStatus.getCircuitBreakerMessage() + ". Tự động phong tỏa toàn bộ lệnh mua mới để bảo vệ vốn tuyệt đối!");
-            return;
-        }
-
-        // 3. Kiểm tra Circuit Breaker nội bộ ngày (Max Loss Limit)
-        BigDecimal currentTodayPnl = getTodayRealizedPnl();
-        if (currentTodayPnl.compareTo(dailyMaxLossLimit.negate()) <= 0) {
-            if (lastCircuitBreakerLogTime == null || java.time.Duration.between(lastCircuitBreakerLogTime, LocalDateTime.now()).toMinutes() >= 15) {
-                addLog("⚠️ CẦU CHÌ BẢO VỆ VỐN ĐÃ KÍCH HOẠT: Mức lỗ trong ngày đạt -" + dailyMaxLossLimit + " đ. Bot tạm dừng mở vị thế mới hôm nay.");
-                lastCircuitBreakerLogTime = LocalDateTime.now();
-            }
-            return;
-        }
-
-        // 4. Kiểm tra Target Lợi Nhuận Ngày
-        if (todayRealizedPnl.compareTo(dailyProfitTarget) >= 0) {
-            addLog("🎉 ĐÃ ĐẠT MỤC TIÊU KIẾM TIỀN HÔM NAY (+" + todayRealizedPnl + " đ). Bot bảo toàn thành quả.");
-        }
-
-        // 4.5b. QUY TẮC LÃO LÀNG: KIỂM SOÁT PHA THỊ TRƯỜNG CHUNG VN-INDEX (O'Neil & Minervini)
-        var marketRegime = marketRegimeDetectionService.detectMarketRegime();
-        if (marketRegime != null && ("DOWNTREND_DEFENSE".equalsIgnoreCase(marketRegime.getCurrentRegime()) || marketRegime.getRecommendedMaxExposure().compareTo(BigDecimal.ZERO) <= 0)) {
-            if (cycleScanCount % 4 == 0) {
-                addLog("🛡️ [LÃO LÀNG - PHÒNG THỦ DOWNTREND] " + marketRegime.getRegimeDisplayName() + " (Độ rộng: " + marketRegime.getDistributionDaysCount() + " trụ đỏ). Khóa 100% lệnh mở mới, bảo toàn tiền mặt tối đa!");
-            }
-            return;
-        }
-
-        // 4.6. Kiểm tra khung giờ giao dịch chính thức của sàn HOSE/HNX (09:00 - 11:30 và 13:00 - 14:45)
-        // Ngoài giờ giao dịch (buổi tối, cuối tuần, giờ nghỉ trưa, phiên ATO 09:00-09:15), bot trực canh cập nhật giá, KHÔNG mở vị thế ảo.
+        // 2. Kiểm tra khung giờ khớp lệnh liên tục của sàn HOSE/HNX (09:15 - 11:30 và 13:00 - 14:45)
         if (enforceMarketHours && !"SIMULATION".equalsIgnoreCase(mode)) {
             java.time.DayOfWeek dow = LocalDate.now().getDayOfWeek();
             boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
             java.time.LocalTime nowTime = java.time.LocalTime.now();
 
-            // 4.6. Bảo vệ phiên ATO (09:00 - 09:15): Không mở lệnh mua bừa bãi khi giá chưa ổn định
             boolean isAtoSession = !isWeekend && nowTime.isAfter(java.time.LocalTime.of(9, 0)) && nowTime.isBefore(java.time.LocalTime.of(9, 15));
             if (isAtoSession) {
-                log.debug("AutoTradingBot: Đang trong phiên ATO (09:00 - 09:15) định giá mở cửa HOSE, tạm hoãn mở lệnh mua để tránh bẫy nhiễu ATO.");
+                log.debug("AutoTradingBot: Đang trong phiên ATO (09:00 - 09:15), tạm hoãn mở lệnh cơ sở để tránh nhiễu giá ATO.");
                 return;
             }
 
@@ -425,18 +401,46 @@ public class AutoTradingBotService {
                  (nowTime.isAfter(java.time.LocalTime.of(13, 0)) && nowTime.isBefore(java.time.LocalTime.of(14, 45))));
 
             if (!isContinuousTrading) {
-                log.debug("AutoTradingBot: Ngoài giờ khớp lệnh HOSE/HNX ({}), tiếp tục trực canh.", nowTime);
+                log.debug("AutoTradingBot: Ngoài giờ khớp lệnh liên tục ({}), tiếp tục trực canh.", nowTime);
                 return;
             }
         }
 
-        // 5. Quét cổ phiếu tìm điểm mua điểm số cao (Confidence Score >= 75)
+        // 3. KÍCH HOẠT ĐỘNG CƠ PHÁI SINH T+0 (Kiếm tiền cả 2 chiều LONG & SHORT bất chấp thị trường tăng hay sập)
+        try {
+            futuresTradingService.executeTacticalSignalScan();
+        } catch (Exception ignored) {}
+
+        // 4. Quét dữ liệu cổ phiếu cơ sở và cập nhật Radar
         List<Trade> openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
         List<StockScanResult> scans = strategyService.scanAllStocks();
         updateBreakoutWatchlist(scans, openTrades);
 
-        if (openTrades.size() < 4) {
+        // 5. CHIẾN THUẬT SĂN TIỀN TRONG BÃO: Bắt đáy Hoảng loạn cực đại (Spring/Pinbar) & Siêu cổ phiếu Kháng Bão (RS Leader)
+        if (openTrades.size() < 2) {
             checkOversoldBounceOpportunity(openTrades);
+            openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
+            checkAntiMarketLeaderOpportunity(openTrades, scans);
+            openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
+        }
+
+        // 6. Kiểm tra Cầu chì phòng hộ sụp đổ thị trường (DEFCON-1) cho các lệnh mua Breakout thông thường
+        MarketCrashProtectionDto crashStatus = crashProtectionService.evaluateMarketCircuitBreaker();
+        if (!crashStatus.isAllowNewPurchases()) {
+            if (botDecisionAuditService != null) {
+                botDecisionAuditService.recordDecision("VNINDEX", "REJECTED_FILTER", BigDecimal.ZERO, "DEFCON_CRASH", crashStatus.getCircuitBreakerMessage(), 0);
+            }
+            addLog("🚨 [DEFCON-1 PHÒNG HỘ THỊ TRƯỜNG] " + crashStatus.getCircuitBreakerMessage() + ". Khóa mua đuổi Breakout cơ sở, tập trung kiếm tiền T+0 trên Phái Sinh VN30F1M!");
+            return;
+        }
+
+        // 7. Kiểm tra Pha thị trường chung VN-Index (O'Neil & Minervini) cho lệnh Breakout
+        var marketRegime = marketRegimeDetectionService.detectMarketRegime();
+        if (marketRegime != null && ("DOWNTREND_DEFENSE".equalsIgnoreCase(marketRegime.getCurrentRegime()) || marketRegime.getRecommendedMaxExposure().compareTo(BigDecimal.ZERO) <= 0)) {
+            if (cycleScanCount % 4 == 0) {
+                addLog("🛡️ [LÃO LÀNG - PHÒNG THỦ DOWNTREND] " + marketRegime.getRegimeDisplayName() + ". Khóa mua đuổi Breakout giả (Bull-trap), chỉ cho phép Phái Sinh T+0 & Săn Đáy Rút Chân!");
+            }
+            return;
         }
 
         if (openTrades.size() >= 4) {
@@ -1222,6 +1226,95 @@ public class AutoTradingBotService {
             }
         } catch (Exception e) {
             log.debug("Oversold bounce scan error: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Vũ khí kiếm tiền thực chiến: Săn "Siêu Cổ Phiếu Kháng Bão" (Anti-Market Relative Strength Leader)
+     * Khi VN-Index đỏ hoặc rung lắc nhưng cổ phiếu vẫn giữ sắc XANH (+0.5% đến +5.0%), nằm trên MA20 & MA50
+     * với dòng tiền lớn đỡ giá -> Đây là cổ phiếu dẫn dắt sẽ bật tăng mạnh nhất khi thị trường hồi phục!
+     */
+    private void checkAntiMarketLeaderOpportunity(List<Trade> openTrades, List<StockScanResult> scans) {
+        try {
+            if (openTrades.size() >= 2 || scans == null || scans.isEmpty()) return;
+
+            StockQuote vniQuote = stockPriceService.getQuote("VNINDEX");
+            double vniChg = (vniQuote != null && vniQuote.getChangePercent() != null)
+                ? vniQuote.getChangePercent().doubleValue() : 0.0;
+
+            // Tìm ứng viên Kháng Bão: Xanh bất chấp thị trường, vượt trội VNI >= +1.5%, trên MA20 & MA50, chưa tăng kịch trần
+            StockScanResult topLeader = scans.stream()
+                .filter(s -> s.getPrice() != null && s.getChangePercent() != null && s.getMa20() != null && s.getMa50() != null)
+                .filter(s -> {
+                    double chg = s.getChangePercent().doubleValue();
+                    double alpha = chg - vniChg;
+                    boolean aboveMa = s.getPrice().compareTo(s.getMa20()) >= 0 && s.getPrice().compareTo(s.getMa50()) >= 0;
+                    return chg >= 0.4 && chg <= 5.2 && alpha >= 1.5 && aboveMa && s.getConfidenceScore() >= 70;
+                })
+                .sorted((a, b) -> Integer.compare(b.getConfidenceScore(), a.getConfidenceScore()))
+                .findFirst()
+                .orElse(null);
+
+            if (topLeader == null) return;
+
+            boolean alreadyHolding = openTrades.stream()
+                .anyMatch(t -> t.getSymbol().equalsIgnoreCase(topLeader.getSymbol()));
+            if (alreadyHolding) return;
+
+            boolean inCooldown = tradeRepository.findAll().stream()
+                .filter(t -> "closed".equalsIgnoreCase(t.getStatus()) && t.getSymbol().equalsIgnoreCase(topLeader.getSymbol()))
+                .anyMatch(t -> t.getCloseDate() != null && java.time.temporal.ChronoUnit.DAYS.between(t.getCloseDate(), LocalDate.now()) < 3);
+            if (inCooldown) return;
+
+            // Nếu đã có 1 vị thế mở thì vị thế đó phải không bị lỗ nặng (> -1.0%) mới mở thêm mã Kháng Bão
+            if (openTrades.size() == 1) {
+                Trade existing = openTrades.get(0);
+                if (existing.getPnlPercent() != null && existing.getPnlPercent().compareTo(BigDecimal.valueOf(-1.0)) < 0) {
+                    return;
+                }
+            }
+
+            BigDecimal currentInvested = openTrades.stream()
+                .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal availableCash = accountCapital.add(todayRealizedPnl).subtract(currentInvested);
+
+            // Giải ngân Pilot 20% NAV cho mã Kháng Bão dẫn sóng
+            BigDecimal pilotBudget = accountCapital.multiply(BigDecimal.valueOf(0.20)).min(availableCash);
+            if (pilotBudget.compareTo(BigDecimal.valueOf(3_000_000)) < 0) return;
+
+            int shares = pilotBudget.divide(topLeader.getPrice(), 0, RoundingMode.FLOOR).intValue();
+            shares = (shares / 100) * 100;
+            if (shares < 100) return;
+
+            BigDecimal entryPrice = topLeader.getPrice();
+            BigDecimal sl = topLeader.getStopLoss() != null ? topLeader.getStopLoss()
+                : com.vntrade.backend.service.decision.QuantitativeStrategyEngine.roundToVietnameseTick(entryPrice.multiply(BigDecimal.valueOf(0.955)));
+            BigDecimal tp = topLeader.getTargetPrice() != null ? topLeader.getTargetPrice()
+                : com.vntrade.backend.service.decision.QuantitativeStrategyEngine.roundToVietnameseTick(entryPrice.multiply(BigDecimal.valueOf(1.12)));
+
+            double alpha = topLeader.getChangePercent().doubleValue() - vniChg;
+            TradeRequest req = TradeRequest.builder()
+                .symbol(topLeader.getSymbol())
+                .type("buy")
+                .price(entryPrice)
+                .quantity(shares)
+                .strategy("ANTI_MARKET_RS_LEADER")
+                .stopLoss(sl)
+                .takeProfit(tp)
+                .reason(String.format("🦅 Siêu Cổ Phiếu Kháng Bão (RS Leader): Tăng %+.2f%% (Vượt trội VNI %+.2f%%) | Giữ vững kênh trên MA20/MA50 | Score: %d/100",
+                    topLeader.getChangePercent().doubleValue(), alpha, topLeader.getConfidenceScore()))
+                .build();
+
+            Trade opened = tradeService.createTrade(req);
+            todayTradesCount++;
+            addLog(String.format("🦅 [SĂN CỔ PHIẾU KHÁNG BÃO] Mua thăm dò %d cp %s giá %,.0f đ (Khỏe hơn VNI %+.2f%%) | SL: %,.0f đ | TP: %,.0f đ!",
+                shares, topLeader.getSymbol(), entryPrice.doubleValue(), alpha, sl.doubleValue(), tp.doubleValue()));
+            try {
+                sseStreamService.broadcast("BOT_TRADE_OPENED", opened);
+            } catch (Exception ignored) {}
+        } catch (Exception e) {
+            log.debug("Anti-market leader scan error: {}", e.getMessage());
         }
     }
 }

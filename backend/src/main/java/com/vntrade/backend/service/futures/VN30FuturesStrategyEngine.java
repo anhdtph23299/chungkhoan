@@ -37,19 +37,27 @@ public class VN30FuturesStrategyEngine {
      */
     public FuturesQuoteDto getCurrentQuote() {
         List<Candle> fCandles = candleService.getFutures5mCandles(2);
+        List<Candle> dailyCandles = candleService.getFuturesDailyCandles(5);
         List<Candle> idxCandles = candleService.getVN30Index5mCandles(2);
 
-        BigDecimal fPrice = BigDecimal.valueOf(1877.2);
-        BigDecimal fPrev = BigDecimal.valueOf(1875.0);
-        long volume = 185000L;
+        BigDecimal fPrice = BigDecimal.valueOf(1818.0);
+        BigDecimal fPrev = BigDecimal.valueOf(1858.0);
+        long volume = 229048L;
+
+        if (!dailyCandles.isEmpty()) {
+            Candle latestDaily = dailyCandles.get(dailyCandles.size() - 1);
+            fPrice = latestDaily.getClose();
+            if (latestDaily.getVolume() != null && latestDaily.getVolume() > 0) {
+                volume = latestDaily.getVolume();
+            }
+            if (dailyCandles.size() >= 2) {
+                fPrev = dailyCandles.get(dailyCandles.size() - 2).getClose();
+            }
+        }
 
         if (!fCandles.isEmpty()) {
-            Candle latest = fCandles.get(fCandles.size() - 1);
-            fPrice = latest.getClose();
-            volume = latest.getVolume() > 0 ? latest.getVolume() * 20 : 185000L;
-            if (fCandles.size() >= 2) {
-                fPrev = fCandles.get(fCandles.size() - 2).getClose();
-            }
+            Candle latest5m = fCandles.get(fCandles.size() - 1);
+            fPrice = latest5m.getClose();
         }
 
         BigDecimal idxPrice = BigDecimal.valueOf(1873.43);
@@ -251,6 +259,79 @@ public class VN30FuturesStrategyEngine {
                 .build();
         }
 
+        // CHIẾN THUẬT 3: SPRING V-REVERSAL LONG (Bắt nhịp hồi chữ V rút chân từ đáy kèm Basis dương Smart Money)
+        double recentLow = currentPrice;
+        int lookbackBars = Math.min(18, n);
+        for (int i = n - lookbackBars; i < n; i++) {
+            if (lows[i] < recentLow) recentLow = lows[i];
+        }
+        double bounceFromLow = currentPrice - recentLow;
+        double prevMacdHist = calculateMacdHistSlice(closes, n - 2);
+        boolean macdTurningUp = macdHist > prevMacdHist;
+
+        if (bounceFromLow >= 3.5 && currentPrice >= ema9 && macdTurningUp && rsi >= 38 && rsi <= 65 && basis.compareTo(BigDecimal.valueOf(-2.0)) >= 0) {
+            BigDecimal entry = roundToFuturesTick(currentPrice);
+            BigDecimal stopLoss = roundToFuturesTick(Math.max(recentLow - 0.5, currentPrice - 2.5));
+            BigDecimal tp1 = roundToFuturesTick(currentPrice + 4.5); // +450k/HĐ
+            BigDecimal tp2 = roundToFuturesTick(currentPrice + 9.0); // +900k/HĐ
+            int score = 82 + (basis.compareTo(BigDecimal.ZERO) > 0 ? 6 : 0) + (currentPrice > vwap ? 5 : 0);
+
+            return FuturesSignalDto.builder()
+                .symbol("VN30F1M")
+                .action("LONG")
+                .currentPrice(entry)
+                .entryPrice(entry)
+                .stopLossPrice(stopLoss)
+                .takeProfit1(tp1)
+                .takeProfit2(tp2)
+                .trailingStopPoints(BigDecimal.valueOf(1.8))
+                .confidenceScore(Math.min(score, 96))
+                .strategyName("SPRING_V_REVERSAL_LONG")
+                .trendStatus("V_BOUNCE_RECOVERY")
+                .recommendationReason(String.format("Rút chân chữ V mạnh +%.1f điểm từ đáy phiên (%.1f), giá vượt lên EMA(9) (%.1f), MACD Hist đảo chiều tăng (%.2f -> %.2f), Basis=%+.1f điểm báo hiệu dòng tiền lớn gom Long đón sóng hồi T+0!",
+                    bounceFromLow, recentLow, ema9, prevMacdHist, macdHist, basis.doubleValue()))
+                .rsi(rsi)
+                .macdHist(macdHist)
+                .vwap(roundToFuturesTick(vwap))
+                .basis(basis)
+                .generatedAt(LocalDateTime.now())
+                .build();
+        }
+
+        // CHIẾN THUẬT 4: VWAP BULL-TRAP REJECTION SHORT (Đánh Short khi nhịp hồi kỹ thuật suy yếu dưới VWAP)
+        double recentHigh = currentPrice;
+        for (int i = n - lookbackBars; i < n; i++) {
+            if (highs[i] > recentHigh) recentHigh = highs[i];
+        }
+        double dropFromHigh = recentHigh - currentPrice;
+        if (dropFromHigh >= 3.0 && currentPrice < ema9 && currentPrice < vwap && !macdTurningUp && rsi <= 52 && rsi >= 32) {
+            BigDecimal entry = roundToFuturesTick(currentPrice);
+            BigDecimal stopLoss = roundToFuturesTick(currentPrice + 2.5);
+            BigDecimal tp1 = roundToFuturesTick(currentPrice - 4.5);
+            BigDecimal tp2 = roundToFuturesTick(currentPrice - 9.0);
+
+            return FuturesSignalDto.builder()
+                .symbol("VN30F1M")
+                .action("SHORT")
+                .currentPrice(entry)
+                .entryPrice(entry)
+                .stopLossPrice(stopLoss)
+                .takeProfit1(tp1)
+                .takeProfit2(tp2)
+                .trailingStopPoints(BigDecimal.valueOf(1.8))
+                .confidenceScore(84)
+                .strategyName("VWAP_REJECTION_SHORT")
+                .trendStatus("BEARISH_REJECTION")
+                .recommendationReason(String.format("Nhịp hồi suy yếu bị từ chối dưới cản VWAP (%.1f) & EMA(9) (%.1f), MACD Hist suy giảm (%.2f). Kích hoạt Short T+0 thuận xu hướng.",
+                    vwap, ema9, macdHist))
+                .rsi(rsi)
+                .macdHist(macdHist)
+                .vwap(roundToFuturesTick(vwap))
+                .basis(basis)
+                .generatedAt(LocalDateTime.now())
+                .build();
+        }
+
         return buildStandbySignal(quote, String.format("Thị trường dao động hẹp (%s, RSI=%.1f, Basis=%.1f). Giữ kỷ luật kiên nhẫn đứng ngoài chờ điểm bứt phá.",
             trendStatus, rsi, basis.doubleValue()));
     }
@@ -334,10 +415,22 @@ public class VN30FuturesStrategyEngine {
     }
 
     private double calculateMacdHist(double[] closes) {
-        double ema12 = calculateEma(closes, 12);
-        double ema26 = calculateEma(closes, 26);
-        double macd = ema12 - ema26;
-        double signal = calculateEma(closes, 9) * 0.1; // Approximation
-        return macd - signal;
+        return calculateMacdHistSlice(closes, closes.length - 1);
+    }
+
+    private double calculateMacdHistSlice(double[] closes, int endIdx) {
+        if (endIdx < 26 || closes.length < 26) return 0.0;
+        int startIdx = Math.max(0, endIdx - 35);
+        int len = endIdx - startIdx + 1;
+        double[] macdSeries = new double[len];
+        for (int i = 0; i < len; i++) {
+            int idx = startIdx + i;
+            double e12 = calculateEmaSlice(closes, 12, idx);
+            double e26 = calculateEmaSlice(closes, 26, idx);
+            macdSeries[i] = e12 - e26;
+        }
+        double currentMacd = macdSeries[len - 1];
+        double signalLine = calculateEmaSlice(macdSeries, 9, len - 1);
+        return Math.round((currentMacd - signalLine) * 100.0) / 100.0;
     }
 }

@@ -123,6 +123,80 @@ export interface OversoldBounce {
   candidates: OversoldCandidate[];
 }
 
+export interface FuturesT0Plan {
+  symbol: string;
+  activeSignal: string;
+  strategyName: string;
+  confidenceScore: number;
+  currentPrice: number;
+  basis: number;
+  vwap: number;
+  rsi: number;
+  macdHist: number;
+  entryPrice: number;
+  stopLossPrice: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  expectedProfit2ContractsVnd: number;
+  longScenarioTrigger: string;
+  shortScenarioTrigger: string;
+  activePositionSummary: string;
+}
+
+export interface TacticalStockPick {
+  symbol: string;
+  category: string;
+  currentPrice: number;
+  changePercent: number;
+  alphaVsVnIndex: number;
+  rsi: number;
+  score: number;
+  entryPrice: number;
+  stopLoss: number;
+  harvest6PercentPrice: number;
+  targetPrice: number;
+  suggestedShares: number;
+  suggestedBudgetVnd: number;
+  catalystReason: string;
+}
+
+export interface PortfolioPositionAction {
+  symbol: string;
+  quantity: number;
+  entryPrice: number;
+  currentPrice: number;
+  pnlVnd: number;
+  pnlPercent: number;
+  strategy: string;
+  stopLoss: number;
+  harvest6PercentPrice: number;
+  takeProfit: number;
+  settlementStatus: string;
+  actionInstruction: string;
+}
+
+export interface TomorrowBattlePlan {
+  generatedAt: string;
+  sessionTitle: string;
+  marketRegime: string;
+  marketRegimeDisplay: string;
+  vnIndexPrice: number;
+  vnIndexChangePercent: number;
+  vn30FuturesPrice: number;
+  vn30Basis: number;
+  smartMoneyFootprint: string;
+  masterStrategyVerdict: string;
+  currentNav: number;
+  availableCash: number;
+  cashRatioPercent: number;
+  openEquityPositionsCount: number;
+  openFuturesPositionsCount: number;
+  futuresT0Plan: FuturesT0Plan;
+  antiMarketLeaders: TacticalStockPick[];
+  oversoldBouncePicks: TacticalStockPick[];
+  openPositionActions: PortfolioPositionAction[];
+}
+
 export interface BotStatus {
   running: boolean;
   mode: string;
@@ -151,6 +225,10 @@ export interface BotStatus {
   maxDrawdownThreshold?: number;
   riskPerTradePercent?: number;
   cycleLabel?: string;
+  futuresRealizedPnl?: number;
+  futuresUnrealizedPnl?: number;
+  futuresOpenPositionsCount?: number;
+  futuresOpenPositions?: any[];
 }
 
 export interface BotConfig {
@@ -277,6 +355,10 @@ export class BotService {
 
   getOversoldBounce(): Observable<OversoldBounce> {
     return this.http.get<OversoldBounce>(`${this.analysisUrl}/oversold-bounce`);
+  }
+
+  getTomorrowBattlePlan(): Observable<TomorrowBattlePlan> {
+    return this.http.get<TomorrowBattlePlan>(`${this.analysisUrl}/tomorrow-plan`);
   }
 
   /**
