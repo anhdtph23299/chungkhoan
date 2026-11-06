@@ -72,6 +72,7 @@ public class BacktestService {
         boolean halfHarvested = false;
         BigDecimal partialHarvestPnl = BigDecimal.ZERO;
         Candle entryCandle = null;
+        int entryIndex = -1;
 
         for (int i = 25; i < candles.size(); i++) {
             Candle current = candles.get(i);
@@ -86,6 +87,13 @@ public class BacktestService {
             }
 
             if (inPosition) {
+                int barsHeld = i - entryIndex;
+                if (barsHeld < 2) {
+                    // Luật UBCKNN & VSDC T+2.5: Cổ phiếu chưa về tài khoản vào ngày T+0 và T+1.
+                    // Nhà đầu tư không thể bán cắt lỗ hay chốt lời trước phiên chiều T+2.
+                    continue;
+                }
+
                 // Trailing Stop động theo ATR khi lãi >= 12%
                 if (current.getHigh().compareTo(entryPrice.multiply(BigDecimal.valueOf(1.12))) >= 0) {
                     BigDecimal curAtr = (atr14 != null && atr14.get(i) != null) ? atr14.get(i) : entryPrice.multiply(BigDecimal.valueOf(0.025));
@@ -123,7 +131,8 @@ public class BacktestService {
 
                 // Kiểm tra Cắt Lỗ hoặc Chạm Trailing Stop / Hòa Vốn
                 if (current.getLow().compareTo(stopLoss) <= 0) {
-                    BigDecimal exitPrice = stopLoss;
+                    // Trượt giá nếu mở cửa gap-down thủng Stop Loss
+                    BigDecimal exitPrice = (current.getOpen() != null && current.getOpen().compareTo(stopLoss) < 0) ? current.getOpen() : stopLoss;
                     BigDecimal grossSell = exitPrice.multiply(BigDecimal.valueOf(positionQty));
                     BigDecimal sellFee = grossSell.multiply(BigDecimal.valueOf(0.0015));
                     BigDecimal sellTax = grossSell.multiply(BigDecimal.valueOf(0.0010));
@@ -300,6 +309,7 @@ public class BacktestService {
                 if (buySignal) {
                     entryPrice = current.getClose();
                     entryCandle = current;
+                    entryIndex = i;
                     stopLoss = entryPrice.multiply(BigDecimal.valueOf(1 - (slPct / 100))).setScale(0, RoundingMode.HALF_UP);
                     takeProfit = entryPrice.multiply(BigDecimal.valueOf(1 + (tpPct / 100))).setScale(0, RoundingMode.HALF_UP);
 
@@ -384,10 +394,31 @@ public class BacktestService {
             ? netProfit.divide(initialCapital, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
             : BigDecimal.ZERO;
 
+        BigDecimal sharpeRatio = BigDecimal.ZERO;
+        if (totalTrades >= 3) {
+            double sumReturns = 0.0;
+            for (BacktestTrade t : tradeHistory) {
+                sumReturns += (t.getPnlPercent() != null ? t.getPnlPercent().doubleValue() : 0.0);
+            }
+            double meanReturn = sumReturns / totalTrades;
+            double sumSqDiff = 0.0;
+            for (BacktestTrade t : tradeHistory) {
+                double diff = (t.getPnlPercent() != null ? t.getPnlPercent().doubleValue() : 0.0) - meanReturn;
+                sumSqDiff += diff * diff;
+            }
+            double stdDev = Math.sqrt(sumSqDiff / totalTrades);
+            if (stdDev > 0.0001) {
+                double sharpe = (meanReturn - 0.02) / stdDev * Math.sqrt(Math.min(totalTrades, 50));
+                sharpeRatio = BigDecimal.valueOf(Math.max(-3.0, Math.min(5.0, sharpe))).setScale(2, RoundingMode.HALF_UP);
+            }
+        }
+
         String conclusion = String.format(
-            "Chiến lược %s trên mã %s mang lại lợi nhuận +%s%%, Tỷ lệ thắng %s%% với Profit Factor %s. Max Drawdown khống chế ở -%s%%.",
-            strategy, symbol, totalReturn.setScale(2, RoundingMode.HALF_UP), winRate.setScale(1, RoundingMode.HALF_UP),
-            profitFactor, maxDrawdown.setScale(2, RoundingMode.HALF_UP)
+            "Chiến lược %s trên mã %s (Chuẩn T+2.5 VSDC, phí thuế 0.40%%): Lợi nhuận %+.2f%%, Thắng %d/%d (%.1f%%), Profit Factor %.2f, MaxDD -%.2f%%, Sharpe %s.",
+            strategy, symbol, totalReturn.setScale(2, RoundingMode.HALF_UP).doubleValue(),
+            wins, totalTrades, winRate.setScale(1, RoundingMode.HALF_UP).doubleValue(),
+            profitFactor.doubleValue(), maxDrawdown.setScale(2, RoundingMode.HALF_UP).doubleValue(),
+            sharpeRatio
         );
 
         return BacktestResult.builder()
@@ -403,7 +434,7 @@ public class BacktestService {
             .winRate(winRate)
             .profitFactor(profitFactor)
             .maxDrawdownPercent(maxDrawdown)
-            .sharpeRatio(BigDecimal.valueOf(1.85))
+            .sharpeRatio(sharpeRatio)
             .tradesHistory(tradeHistory)
             .conclusion(conclusion)
             .build();

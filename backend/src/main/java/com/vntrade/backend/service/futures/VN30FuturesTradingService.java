@@ -1,6 +1,9 @@
 package com.vntrade.backend.service.futures;
 
 import com.vntrade.backend.dto.*;
+import com.vntrade.backend.entity.FuturesPosition;
+import com.vntrade.backend.repository.FuturesPositionRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -21,6 +24,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class VN30FuturesTradingService {
 
     private final VN30FuturesStrategyEngine strategyEngine;
+    private final FuturesPositionRepository futuresPositionRepository;
 
     // Hằng số tài chính phái sinh HNX
     public static final BigDecimal POINT_MULTIPLIER = BigDecimal.valueOf(100_000); // 100.000 đ/điểm
@@ -31,8 +35,8 @@ public class VN30FuturesTradingService {
     private final Map<String, FuturesPositionDto> openPositions = new ConcurrentHashMap<>();
     private final List<FuturesPositionDto> positionHistory = new CopyOnWriteArrayList<>();
 
-    // Cấu hình Bot phái sinh
-    private boolean autoTrading = true;
+    // Cấu hình Bot phái sinh - MẶC ĐỊNH TẮT TỰ ĐỘNG ĐỂ BẢO VỆ TÀI KHOẢN THEO ĐỀ XUẤT 1
+    private boolean autoTrading = false;
     private String mode = "LIVE_PAPER";
     private BigDecimal capital = BigDecimal.valueOf(100_000_000); // Vốn 100M VND
     private int maxContracts = 2;                                // Mặc định 2 HĐ (an toàn trong 100M)
@@ -42,11 +46,60 @@ public class VN30FuturesTradingService {
     private BigDecimal trailingStopDistance = BigDecimal.valueOf(1.5); // Bám sau 1.5 điểm
     private boolean closeBeforeAtc = true;
 
-    // Nhật ký hoạt động trong ngày
+    // Nhật ký hoạt động trong ngày & Cầu chì chống Overtrading
     private BigDecimal todayRealizedPnlVnd = BigDecimal.ZERO;
     private BigDecimal todayPnlPoints = BigDecimal.ZERO;
     private int todayTradesCount = 0;
+    private LocalDateTime lastCloseTime = null;
+    private java.time.LocalDate currentTradingDate = java.time.LocalDate.now();
+    private static final int MAX_DAILY_FUTURES_TRADES = 3;
+    private static final int COOLDOWN_MINUTES_AFTER_CLOSE = 15;
+    private static final BigDecimal DAILY_FUTURES_CIRCUIT_BREAKER = BigDecimal.valueOf(-1_500_000);
     private final List<String> botLogs = new CopyOnWriteArrayList<>();
+
+    @PostConstruct
+    public void initFromDatabase() {
+        try {
+            // Nạp các vị thế OPEN từ Database để không mất trạng thái khi restart
+            List<FuturesPosition> dbOpen = futuresPositionRepository.findByStatus("OPEN");
+            for (FuturesPosition p : dbOpen) {
+                FuturesPositionDto dto = toDto(p);
+                openPositions.put(dto.getId(), dto);
+            }
+
+            // Nạp lịch sử vị thế đã đóng gần nhất
+            List<FuturesPosition> dbClosed = futuresPositionRepository.findByStatusOrderByCloseTimeDesc("CLOSED");
+            for (FuturesPosition p : dbClosed) {
+                positionHistory.add(toDto(p));
+            }
+
+            // Đồng bộ ID generator
+            long maxId = 1000;
+            List<FuturesPosition> all = futuresPositionRepository.findAll();
+            for (FuturesPosition p : all) {
+                if (p.getId() != null && p.getId().startsWith("VN30F-")) {
+                    try {
+                        long num = Long.parseLong(p.getId().substring(6));
+                        if (num > maxId) maxId = num;
+                    } catch (Exception ignored) {}
+                }
+            }
+            positionIdGen.set(maxId);
+
+            // Tính lãi/lỗ hôm nay từ DB
+            java.time.LocalDate today = java.time.LocalDate.now();
+            BigDecimal todayDbPnl = dbClosed.stream()
+                .filter(p -> p.getCloseTime() != null && today.equals(p.getCloseTime().toLocalDate()))
+                .map(p -> p.getNetPnlVnd() != null ? p.getNetPnlVnd() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            this.todayRealizedPnlVnd = todayDbPnl;
+
+            addLog(String.format("💾 [ĐỒNG BỘ DB PHÁI SINH THÀNH CÔNG] Đã nạp %d vị thế mở, %d lịch sử lệnh. AutoTrading=%s.",
+                openPositions.size(), positionHistory.size(), autoTrading ? "BẬT" : "TẮT (AN TOÀN)"));
+        } catch (Exception e) {
+            log.warn("Lỗi nạp dữ liệu phái sinh từ DB: {}", e.getMessage());
+        }
+    }
 
     public FuturesBotConfigDto getBotConfig() {
         return FuturesBotConfigDto.builder()
@@ -81,11 +134,10 @@ public class VN30FuturesTradingService {
 
     public void setAutoTrading(boolean enabled) {
         this.autoTrading = enabled;
-        addLog("Robot Phái Sinh VN30F: " + (enabled ? "KÍCH HOẠT TỰ ĐỘNG SĂN LỆNH" : "TẠM DỪNG VÀO LỆNH MỚI"));
+        addLog("Robot Phái Sinh VN30F: " + (enabled ? "KÍCH HOẠT TỰ ĐỘNG SĂN LỆNH" : "TẠM DỪNG VÀO LỆNH MỚI (CHẾ ĐỘ AN TOÀN)"));
     }
 
     public List<FuturesPositionDto> getOpenPositions() {
-        // Cập nhật giá thị trường và PnL trước khi trả về
         FuturesQuoteDto quote = strategyEngine.getCurrentQuote();
         BigDecimal currentPrice = quote.getCurrentPrice();
 
@@ -105,6 +157,34 @@ public class VN30FuturesTradingService {
     }
 
     /**
+     * Tổng lãi/lỗ phái sinh đã chốt trong lịch sử (từ DB)
+     */
+    public BigDecimal getTotalRealizedPnlVnd() {
+        try {
+            BigDecimal dbPnl = futuresPositionRepository.getTotalRealizedPnlVnd();
+            return dbPnl != null ? dbPnl : BigDecimal.ZERO;
+        } catch (Exception e) {
+            return todayRealizedPnlVnd;
+        }
+    }
+
+    /**
+     * Tổng lãi/lỗ chưa thực hiện (Unrealized PnL) của các vị thế đang mở
+     */
+    public BigDecimal getUnrealizedPnlVnd() {
+        FuturesQuoteDto quote = strategyEngine.getCurrentQuote();
+        BigDecimal currentPrice = quote.getCurrentPrice();
+        BigDecimal total = BigDecimal.ZERO;
+        for (FuturesPositionDto pos : openPositions.values()) {
+            updatePositionPnL(pos, currentPrice);
+            if (pos.getNetPnlVnd() != null) {
+                total = total.add(pos.getNetPnlVnd());
+            }
+        }
+        return total;
+    }
+
+    /**
      * Mở vị thế mới (LONG hoặc SHORT)
      */
     public synchronized FuturesPositionDto openPosition(String side, int contracts, BigDecimal entryPrice,
@@ -118,6 +198,11 @@ public class VN30FuturesTradingService {
 
         BigDecimal safeEntry = entryPrice != null ? VN30FuturesStrategyEngine.roundToFuturesTick(entryPrice)
             : strategyEngine.getCurrentQuote().getCurrentPrice();
+
+        if (safeEntry == null || safeEntry.compareTo(BigDecimal.ZERO) <= 0) {
+            log.warn("Không thể mở vị thế: Giá vào không hợp lệ ({})", safeEntry);
+            return null;
+        }
 
         BigDecimal safeSl = slPrice != null ? VN30FuturesStrategyEngine.roundToFuturesTick(slPrice)
             : (cleanSide.equals("LONG") ? safeEntry.subtract(stopLossPoints) : safeEntry.add(stopLossPoints));
@@ -156,6 +241,9 @@ public class VN30FuturesTradingService {
         openPositions.put(posId, position);
         todayTradesCount++;
 
+        // Lưu vào Database vĩnh viễn
+        savePositionToDb(position);
+
         addLog(String.format("🎯 [MỞ VỊ THẾ %s] %d HĐ @ %.1f | SL: %.1f | TP: %.1f | Ký quỹ: %,.0f đ | Lý do: %s",
             cleanSide, contracts, safeEntry.doubleValue(), safeSl.doubleValue(), safeTp.doubleValue(),
             marginReq.doubleValue(), reason != null ? reason : "Tín hiệu định lượng"));
@@ -181,7 +269,11 @@ public class VN30FuturesTradingService {
 
         todayRealizedPnlVnd = todayRealizedPnlVnd.add(pos.getNetPnlVnd());
         todayPnlPoints = todayPnlPoints.add(pos.getPnlPoints());
+        lastCloseTime = LocalDateTime.now();
         positionHistory.add(0, pos);
+
+        // Lưu cập nhật vào Database
+        savePositionToDb(pos);
 
         addLog(String.format("🏁 [ĐÓNG VỊ THẾ %s] %d HĐ @ %.1f (Vào %.1f) | Lãi/Lỗ: %+.1f pts (%+,.0f đ) | Lý do: %s",
             pos.getSide(), pos.getContracts(), safeClose.doubleValue(), pos.getEntryPrice().doubleValue(),
@@ -205,6 +297,10 @@ public class VN30FuturesTradingService {
         try {
             FuturesQuoteDto quote = strategyEngine.getCurrentQuote();
             BigDecimal currentPrice = quote.getCurrentPrice();
+
+            if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
+                return;
+            }
 
             // 1. Giám sát các vị thế đang mở: Trailing Stop, TP, SL
             for (FuturesPositionDto pos : openPositions.values()) {
@@ -233,6 +329,7 @@ public class VN30FuturesTradingService {
                         BigDecimal breakEvenPlus = VN30FuturesStrategyEngine.roundToFuturesTick(pos.getEntryPrice().add(BigDecimal.valueOf(0.4)));
                         if (pos.getStopLossPrice().compareTo(breakEvenPlus) < 0) {
                             pos.setStopLossPrice(breakEvenPlus);
+                            savePositionToDb(pos);
                             addLog(String.format("🛡️ [GIÁP HÒA VỐN T+0] Dời SL vị thế LONG %s lên %.1f (+0.4 pts trên giá vốn). Khóa rủi ro thua lỗ 100%%!",
                                 pos.getId(), breakEvenPlus.doubleValue()));
                         }
@@ -240,6 +337,7 @@ public class VN30FuturesTradingService {
                         BigDecimal breakEvenPlus = VN30FuturesStrategyEngine.roundToFuturesTick(pos.getEntryPrice().subtract(BigDecimal.valueOf(0.4)));
                         if (pos.getStopLossPrice().compareTo(breakEvenPlus) > 0) {
                             pos.setStopLossPrice(breakEvenPlus);
+                            savePositionToDb(pos);
                             addLog(String.format("🛡️ [GIÁP HÒA VỐN T+0] Dời SL vị thế SHORT %s xuống %.1f (+0.4 pts dưới giá vốn). Khóa rủi ro thua lỗ 100%%!",
                                 pos.getId(), breakEvenPlus.doubleValue()));
                         }
@@ -260,6 +358,7 @@ public class VN30FuturesTradingService {
 
                     todayRealizedPnlVnd = todayRealizedPnlVnd.add(partialNet);
                     todayPnlPoints = todayPnlPoints.add(diff);
+                    savePositionToDb(pos);
 
                     addLog(String.format("🌾 [GẶT HÁI TIỀN TƯƠI T+0] Đã chốt 50%% (%d HĐ %s @ %.1f) đút túi +%s đ (+%.1f pts). Giữ %d HĐ còn lại gồng tới TP %.1f!",
                         harvestQty, pos.getSide(), currentPrice.doubleValue(), String.format("%,.0f", partialNet.doubleValue()),
@@ -272,13 +371,13 @@ public class VN30FuturesTradingService {
                         BigDecimal newTrail = currentPrice.subtract(trailingStopDistance);
                         if (pos.getTrailingStopPrice() == null || newTrail.compareTo(pos.getTrailingStopPrice()) > 0) {
                             pos.setTrailingStopPrice(VN30FuturesStrategyEngine.roundToFuturesTick(newTrail));
-                            log.debug("Trailing Stop LONG dời lên: {}", pos.getTrailingStopPrice());
+                            savePositionToDb(pos);
                         }
                     } else {
                         BigDecimal newTrail = currentPrice.add(trailingStopDistance);
                         if (pos.getTrailingStopPrice() == null || newTrail.compareTo(pos.getTrailingStopPrice()) < 0) {
                             pos.setTrailingStopPrice(VN30FuturesStrategyEngine.roundToFuturesTick(newTrail));
-                            log.debug("Trailing Stop SHORT dời xuống: {}", pos.getTrailingStopPrice());
+                            savePositionToDb(pos);
                         }
                     }
                 }
@@ -303,21 +402,42 @@ public class VN30FuturesTradingService {
                 return;
             }
 
-            // 3. KIỂM SOÁT GIỜ GIAO DỊCH PHÁI SINH HNX (08:45 - 11:30 và 13:00 - 14:25 từ T2-T6)
-            java.time.DayOfWeek dow = java.time.LocalDate.now().getDayOfWeek();
-            boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
-            boolean isFuturesMarketOpen = !isWeekend &&
-                ((nowTime.isAfter(LocalTime.of(8, 45)) && nowTime.isBefore(LocalTime.of(11, 30))) ||
-                 (nowTime.isAfter(LocalTime.of(13, 0)) && nowTime.isBefore(LocalTime.of(14, 25))));
-
-            if (!isFuturesMarketOpen) {
-                return; // Ngoài phiên khớp lệnh hoặc sau 14:25/cuối tuần: Nghiêm cấm mở vị thế!
+            // Reset thống kê ngày mới tự động
+            if (!java.time.LocalDate.now().equals(currentTradingDate)) {
+                currentTradingDate = java.time.LocalDate.now();
+                todayRealizedPnlVnd = BigDecimal.ZERO;
+                todayPnlPoints = BigDecimal.ZERO;
+                todayTradesCount = 0;
+                lastCloseTime = null;
+                addLog("🌅 [PHIÊN MỚI PHÁI SINH T+0] Đã làm mới bộ đếm lệnh & PnL trong ngày.");
             }
 
-            // 4. Nếu Bot Auto đang bật và chưa có vị thế mở -> Kiểm tra mở lệnh mới
-            if (autoTrading && openPositions.isEmpty()) {
+            // 3. KIỂM SOÁT GIỜ KHỚP LỆNH LIÊN TỤC PHÁI SINH HNX (09:15 - 11:30 và 13:00 - 14:25 từ T2-T6)
+            // LƯU Ý: Khóa mở lệnh trước 09:15 để đợi chỉ số VN30 cơ sở bước vào khớp lệnh liên tục thực sự!
+            java.time.DayOfWeek dow = java.time.LocalDate.now().getDayOfWeek();
+            boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
+            boolean isFuturesContinuousOpen = !isWeekend &&
+                ((nowTime.isAfter(LocalTime.of(9, 15)) && nowTime.isBefore(LocalTime.of(11, 30))) ||
+                 (nowTime.isAfter(LocalTime.of(13, 0)) && nowTime.isBefore(LocalTime.of(14, 25))));
+
+            if (!isFuturesContinuousOpen) {
+                return; // Khóa mở vị thế trong giờ nhiễu ATO (08:45-09:15) hoặc ngoài phiên!
+            }
+
+            // 4. KIỂM TRA ĐIỀU KIỆN AN TOÀN: NẾU AUTOTRADING = FALSE THÌ TUYỆT ĐỐI KHÔNG MỞ LỆNH MỚI
+            if (!autoTrading) {
+                return;
+            }
+
+            // 5. Kiểm tra Cầu chì ngày (-1.5M), Giới hạn 3 lệnh/ngày & Cooldown 15 phút
+            if (!canOpenNewFuturesTrade()) {
+                return;
+            }
+
+            // 6. Nếu chưa có vị thế mở -> Kiểm tra mở lệnh mới
+            if (openPositions.isEmpty()) {
                 FuturesSignalDto signal = strategyEngine.generateSignal();
-                if (signal != null && signal.getConfidenceScore() >= 75) {
+                if (signal != null && signal.getConfidenceScore() >= 80) {
                     if ("LONG".equalsIgnoreCase(signal.getAction())) {
                         openPosition("LONG", maxContracts, signal.getEntryPrice(), signal.getStopLossPrice(), signal.getTakeProfit1(), signal.getRecommendationReason());
                     } else if ("SHORT".equalsIgnoreCase(signal.getAction())) {
@@ -331,6 +451,7 @@ public class VN30FuturesTradingService {
     }
 
     private void updatePositionPnL(FuturesPositionDto pos, BigDecimal currentPrice) {
+        if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) return;
         pos.setCurrentPrice(currentPrice);
         boolean isLong = "LONG".equalsIgnoreCase(pos.getSide());
 
@@ -355,7 +476,7 @@ public class VN30FuturesTradingService {
     }
 
     /**
-     * Kích hoạt quét và khớp lệnh Phái sinh T+0 chủ động (phối hợp cùng Bot Cơ sở)
+     * Kích hoạt quét và khớp lệnh Phái sinh T+0 chủ động
      */
     public synchronized FuturesPositionDto executeTacticalSignalScan() {
         try {
@@ -363,11 +484,19 @@ public class VN30FuturesTradingService {
             for (FuturesPositionDto pos : openPositions.values()) {
                 updatePositionPnL(pos, quote.getCurrentPrice());
             }
-            if (!autoTrading || !openPositions.isEmpty()) {
+            LocalTime nowTime = LocalTime.now();
+            java.time.DayOfWeek dow = java.time.LocalDate.now().getDayOfWeek();
+            boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
+            boolean isFuturesContinuousOpen = !isWeekend &&
+                ((nowTime.isAfter(LocalTime.of(9, 15)) && nowTime.isBefore(LocalTime.of(11, 30))) ||
+                 (nowTime.isAfter(LocalTime.of(13, 0)) && nowTime.isBefore(LocalTime.of(14, 25))));
+
+            // NẾU TẮT AUTOTRADING HOẶC NGOÀI KHUNG GIỜ -> TỪ CHỐI VÀO LỆNH
+            if (!autoTrading || !openPositions.isEmpty() || !isFuturesContinuousOpen || !canOpenNewFuturesTrade()) {
                 return openPositions.values().stream().findFirst().orElse(null);
             }
             FuturesSignalDto signal = strategyEngine.generateSignal();
-            if (signal != null && signal.getConfidenceScore() >= 75) {
+            if (signal != null && signal.getConfidenceScore() >= 80) {
                 if ("LONG".equalsIgnoreCase(signal.getAction()) || "SHORT".equalsIgnoreCase(signal.getAction())) {
                     return openPosition(
                         signal.getAction(),
@@ -385,13 +514,85 @@ public class VN30FuturesTradingService {
         return null;
     }
 
+    private boolean canOpenNewFuturesTrade() {
+        if (todayRealizedPnlVnd.compareTo(DAILY_FUTURES_CIRCUIT_BREAKER) <= 0) {
+            return false;
+        }
+        if (todayTradesCount >= MAX_DAILY_FUTURES_TRADES) {
+            return false;
+        }
+        if (lastCloseTime != null && java.time.Duration.between(lastCloseTime, LocalDateTime.now()).toMinutes() < COOLDOWN_MINUTES_AFTER_CLOSE) {
+            return false;
+        }
+        return true;
+    }
+
     public void resetAll() {
+        lastCloseTime = null;
+        currentTradingDate = java.time.LocalDate.now();
         openPositions.clear();
         positionHistory.clear();
         todayRealizedPnlVnd = BigDecimal.ZERO;
         todayPnlPoints = BigDecimal.ZERO;
         todayTradesCount = 0;
         botLogs.clear();
-        addLog("🔄 [RESET PHÁI SINH HOÀN TẤT] Vốn phái sinh 100,000,000 đ, 0 vị thế mở. Sẵn sàng cho tuần mới!");
+        try {
+            futuresPositionRepository.deleteAll();
+        } catch (Exception ignored) {}
+        addLog("🔄 [RESET PHÁI SINH HOÀN TẤT] Vốn phái sinh 100,000,000 đ, 0 vị thế mở. Đã xóa dữ liệu DB phái sinh cũ.");
+    }
+
+    private void savePositionToDb(FuturesPositionDto dto) {
+        if (dto == null || dto.getId() == null) return;
+        try {
+            FuturesPosition entity = FuturesPosition.builder()
+                .id(dto.getId())
+                .symbol(dto.getSymbol())
+                .side(dto.getSide())
+                .contracts(dto.getContracts())
+                .entryPrice(dto.getEntryPrice())
+                .currentPrice(dto.getCurrentPrice())
+                .closePrice(dto.getClosePrice())
+                .stopLossPrice(dto.getStopLossPrice())
+                .takeProfitPrice(dto.getTakeProfitPrice())
+                .trailingStopPrice(dto.getTrailingStopPrice())
+                .pnlPoints(dto.getPnlPoints())
+                .grossPnlVnd(dto.getGrossPnlVnd())
+                .feesVnd(dto.getFeesVnd())
+                .netPnlVnd(dto.getNetPnlVnd())
+                .marginUsed(dto.getMarginUsed())
+                .status(dto.getStatus())
+                .closeReason(dto.getCloseReason())
+                .openTime(dto.getOpenTime())
+                .closeTime(dto.getCloseTime())
+                .build();
+            futuresPositionRepository.save(entity);
+        } catch (Exception e) {
+            log.warn("Lỗi lưu FuturesPosition vào DB: {}", e.getMessage());
+        }
+    }
+
+    private FuturesPositionDto toDto(FuturesPosition entity) {
+        return FuturesPositionDto.builder()
+            .id(entity.getId())
+            .symbol(entity.getSymbol())
+            .side(entity.getSide())
+            .contracts(entity.getContracts())
+            .entryPrice(entity.getEntryPrice())
+            .currentPrice(entity.getCurrentPrice())
+            .closePrice(entity.getClosePrice())
+            .stopLossPrice(entity.getStopLossPrice())
+            .takeProfitPrice(entity.getTakeProfitPrice())
+            .trailingStopPrice(entity.getTrailingStopPrice())
+            .pnlPoints(entity.getPnlPoints())
+            .grossPnlVnd(entity.getGrossPnlVnd())
+            .feesVnd(entity.getFeesVnd())
+            .netPnlVnd(entity.getNetPnlVnd())
+            .marginUsed(entity.getMarginUsed())
+            .status(entity.getStatus())
+            .closeReason(entity.getCloseReason())
+            .openTime(entity.getOpenTime())
+            .closeTime(entity.getCloseTime())
+            .build();
     }
 }

@@ -195,14 +195,14 @@ public class AutoTradingBotService {
         List<Trade> openTrades = tradeRepository.findOpenBuyTrades();
         List<Trade> allTrades = tradeRepository.findAllByOrderByTradeDateDesc();
         BigDecimal realized = allTrades.stream()
-            .filter(t -> "closed".equals(t.getStatus()) && t.getPnl() != null)
+            .filter(t -> "closed".equalsIgnoreCase(t.getStatus()) && t.getPnl() != null)
             .map(Trade::getPnl)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal futuresRealized = futuresTradingService != null ? futuresTradingService.getTotalRealizedPnlVnd() : BigDecimal.ZERO;
         BigDecimal invested = openTrades.stream()
-            .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
+            .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())).add(t.getFee() != null ? t.getFee() : BigDecimal.ZERO))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal cash = accountCapital.add(realized).subtract(invested);
-        return cash.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : cash;
+        return accountCapital.add(realized).add(futuresRealized).subtract(invested);
     }
 
     public BigDecimal getInvestedStockValue() {
@@ -225,7 +225,10 @@ public class AutoTradingBotService {
     }
 
     public BigDecimal getCurrentNav() {
-        return getAvailableCash().add(getInvestedStockValue());
+        BigDecimal cash = getAvailableCash();
+        BigDecimal stockValue = getInvestedStockValue();
+        BigDecimal futuresUnrealized = futuresTradingService != null ? futuresTradingService.getUnrealizedPnlVnd() : BigDecimal.ZERO;
+        return cash.add(stockValue).add(futuresUnrealized);
     }
 
     public BigDecimal getDailyProfitTarget() {
@@ -525,10 +528,7 @@ public class AutoTradingBotService {
                 }
 
                 // 1.1. KIỂM SOÁT TIỀN MẶT KHẢ DỤNG: Nghiêm cấm mua vượt quá số dư tiền mặt của tài khoản
-                BigDecimal currentInvested = openTrades.stream()
-                    .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-                BigDecimal availableCash = accountCapital.add(todayRealizedPnl).subtract(currentInvested);
+                BigDecimal availableCash = getAvailableCash();
 
                 if (availableCash.compareTo(BigDecimal.valueOf(2_000_000)) <= 0) {
                     addLog(String.format("🛡️ [QUẢN TRỊ TIỀN MẶT] Bỏ qua %s: Tiền mặt khả dụng còn %,.0f đ (dưới đệm an toàn 2.000.000 đ). Không giải ngân thêm.",
@@ -1123,8 +1123,9 @@ public class AutoTradingBotService {
                 BigDecimal wallPrice = s.getTargetPrice() != null ? s.getTargetPrice() : curPrice.multiply(BigDecimal.valueOf(1.03));
                 wallPrice = QuantitativeStrategyEngine.roundToVietnameseTick(wallPrice);
 
-                long wallVol = 180_000L + (s.getConfidenceScore() * 1200L);
-                double wallProp = 45.0 + (s.getConfidenceScore() % 15);
+                long wallVol = 0L;
+                double wallProp = 0.0;
+                boolean realWallFound = false;
                 try {
                     OrderBookImbalanceDto obi = orderBookImbalanceService.analyzeMicrostructure(s.getSymbol());
                     if (obi != null) {
@@ -1133,8 +1134,9 @@ public class AutoTradingBotService {
                         }
                         if (obi.getWallVolume() != null && obi.getWallVolume() > 0) {
                             wallVol = obi.getWallVolume();
+                            realWallFound = true;
                         }
-                        if (obi.getWallProportionPercent() != null) {
+                        if (obi.getWallProportionPercent() != null && obi.getWallProportionPercent().compareTo(BigDecimal.ZERO) > 0) {
                             wallProp = obi.getWallProportionPercent().doubleValue();
                         }
                     }
@@ -1150,7 +1152,9 @@ public class AutoTradingBotService {
                 item.put("wallVolume", wallVol);
                 item.put("wallProportionPercent", wallProp);
                 item.put("confidenceScore", s.getConfidenceScore());
-                item.put("status", s.getConfidenceScore() >= 75 ? "ĐẠT CHUẨN MUA" : "CHỜ NỔ VOL");
+                item.put("status", realWallFound
+                    ? (s.getConfidenceScore() >= 75 ? "ĐẠT CHUẨN MUA" : "CHỜ NỔ VOL")
+                    : (s.getConfidenceScore() >= 75 ? "THEO DÕI BREAKOUT" : "CHỜ SỔ LỆNH THẬT"));
                 item.put("updatedAt", nowStr);
                 newQueue.add(item);
             });
@@ -1183,13 +1187,11 @@ public class AutoTradingBotService {
                         if (inCooldown) return;
 
                         // Tính tiền mặt khả dụng
-                        BigDecimal currentInvested = openTrades.stream()
-                            .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
-                            .reduce(BigDecimal.ZERO, BigDecimal::add);
-                        BigDecimal availableCash = accountCapital.add(todayRealizedPnl).subtract(currentInvested);
+                        BigDecimal availableCash = getAvailableCash();
+                        if (availableCash.compareTo(BigDecimal.valueOf(2_000_000)) <= 0) return;
 
-                        // Giải ngân tỷ trọng chiến thuật thăm dò: 15% - 20% NAV
-                        BigDecimal tacticalBudget = accountCapital.multiply(BigDecimal.valueOf(0.18)).min(availableCash);
+                        // Giải ngân tỷ trọng chiến thuật thăm dò: 15% - 20% NAV (không vượt tiền mặt)
+                        BigDecimal tacticalBudget = getCurrentNav().multiply(BigDecimal.valueOf(0.18)).min(availableCash);
                         if (tacticalBudget.compareTo(BigDecimal.valueOf(3_000_000)) >= 0) {
                             int shares = tacticalBudget.divide(topCandidate.getCurrentPrice(), 0, RoundingMode.FLOOR).intValue();
                             shares = (shares / 100) * 100; // Làm tròn lô 100 HOSE
@@ -1274,13 +1276,11 @@ public class AutoTradingBotService {
                 }
             }
 
-            BigDecimal currentInvested = openTrades.stream()
-                .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal availableCash = accountCapital.add(todayRealizedPnl).subtract(currentInvested);
+            BigDecimal availableCash = getAvailableCash();
+            if (availableCash.compareTo(BigDecimal.valueOf(2_000_000)) <= 0) return;
 
-            // Giải ngân Pilot 20% NAV cho mã Kháng Bão dẫn sóng
-            BigDecimal pilotBudget = accountCapital.multiply(BigDecimal.valueOf(0.20)).min(availableCash);
+            // Giải ngân Pilot 20% NAV cho mã Kháng Bão dẫn sóng (không vượt tiền mặt)
+            BigDecimal pilotBudget = getCurrentNav().multiply(BigDecimal.valueOf(0.20)).min(availableCash);
             if (pilotBudget.compareTo(BigDecimal.valueOf(3_000_000)) < 0) return;
 
             int shares = pilotBudget.divide(topLeader.getPrice(), 0, RoundingMode.FLOOR).intValue();

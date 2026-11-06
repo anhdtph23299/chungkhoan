@@ -3,12 +3,15 @@ package com.vntrade.backend.service.futures;
 import com.vntrade.backend.dto.Candle;
 import com.vntrade.backend.dto.FuturesQuoteDto;
 import com.vntrade.backend.dto.FuturesSignalDto;
+import com.vntrade.backend.dto.StockQuote;
+import com.vntrade.backend.service.marketdata.StockPriceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
@@ -19,6 +22,7 @@ import java.util.List;
 public class VN30FuturesStrategyEngine {
 
     private final VN30FuturesCandleService candleService;
+    private final StockPriceService stockPriceService;
 
     /**
      * Làm tròn theo bước giá phái sinh HNX: 0.1 điểm
@@ -33,23 +37,21 @@ public class VN30FuturesStrategyEngine {
     }
 
     /**
-     * Tạo báo giá phái sinh thời gian thực & Tính toán độ lệch Basis
+     * Tạo báo giá phái sinh thời gian thực & Tính toán độ lệch Basis trung thực 100%
      */
     public FuturesQuoteDto getCurrentQuote() {
         List<Candle> fCandles = candleService.getFutures5mCandles(2);
         List<Candle> dailyCandles = candleService.getFuturesDailyCandles(5);
         List<Candle> idxCandles = candleService.getVN30Index5mCandles(2);
 
-        BigDecimal fPrice = BigDecimal.valueOf(1818.0);
-        BigDecimal fPrev = BigDecimal.valueOf(1858.0);
-        long volume = 229048L;
+        BigDecimal fPrice = null;
+        BigDecimal fPrev = null;
+        Long volume = null;
 
         if (!dailyCandles.isEmpty()) {
             Candle latestDaily = dailyCandles.get(dailyCandles.size() - 1);
             fPrice = latestDaily.getClose();
-            if (latestDaily.getVolume() != null && latestDaily.getVolume() > 0) {
-                volume = latestDaily.getVolume();
-            }
+            volume = latestDaily.getVolume();
             if (dailyCandles.size() >= 2) {
                 fPrev = dailyCandles.get(dailyCandles.size() - 2).getClose();
             }
@@ -60,20 +62,47 @@ public class VN30FuturesStrategyEngine {
             fPrice = latest5m.getClose();
         }
 
-        BigDecimal idxPrice = BigDecimal.valueOf(1873.43);
-        if (!idxCandles.isEmpty()) {
+        // Lấy giá cơ sở VN30 thực tế từ sàn
+        BigDecimal idxPrice = null;
+        try {
+            StockQuote vn30Quote = stockPriceService.getQuote("VN30");
+            if (vn30Quote != null && vn30Quote.getPrice() != null && vn30Quote.getPrice().compareTo(BigDecimal.ZERO) > 0) {
+                idxPrice = vn30Quote.getPrice();
+            }
+        } catch (Exception ignored) {}
+
+        if (idxPrice == null && !idxCandles.isEmpty()) {
             idxPrice = idxCandles.get(idxCandles.size() - 1).getClose();
         }
 
-        BigDecimal change = roundToFuturesTick(fPrice.subtract(fPrev));
-        BigDecimal pctChange = fPrev.compareTo(BigDecimal.ZERO) > 0
+        // Nếu hoàn toàn không có dữ liệu nến thật từ sàn, báo mất kết nối thay vì bịa giá 1818
+        if (fPrice == null || fPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return FuturesQuoteDto.builder()
+                .symbol("VN30F1M")
+                .currentPrice(BigDecimal.ZERO)
+                .change(BigDecimal.ZERO)
+                .pctChange(BigDecimal.ZERO)
+                .vn30IndexPrice(idxPrice != null ? idxPrice : BigDecimal.ZERO)
+                .basis(BigDecimal.ZERO)
+                .basisStatus("MẤT_KẾT_NỐI_FEED")
+                .volume(0L)
+                .openInterest(null)
+                .sessionTime(determineSessionTime())
+                .timestamp(LocalDateTime.now())
+                .build();
+        }
+
+        BigDecimal change = fPrev != null ? roundToFuturesTick(fPrice.subtract(fPrev)) : BigDecimal.ZERO;
+        BigDecimal pctChange = (fPrev != null && fPrev.compareTo(BigDecimal.ZERO) > 0)
             ? change.divide(fPrev, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP)
             : BigDecimal.ZERO;
 
-        BigDecimal basis = roundToFuturesTick(fPrice.subtract(idxPrice));
+        BigDecimal basis = idxPrice != null ? roundToFuturesTick(fPrice.subtract(idxPrice)) : BigDecimal.ZERO;
 
         String basisStatus = "CÂN_BẰNG";
-        if (basis.compareTo(BigDecimal.valueOf(6.0)) > 0) {
+        if (idxPrice == null) {
+            basisStatus = "CHỜ_DỮ_LIỆU_VN30";
+        } else if (basis.compareTo(BigDecimal.valueOf(6.0)) > 0) {
             basisStatus = "DƯƠNG_CAO (Hưng phấn quá mức)";
         } else if (basis.compareTo(BigDecimal.valueOf(-6.0)) < 0) {
             basisStatus = "ÂM_SÂU (Chiết khấu mạnh)";
@@ -86,11 +115,11 @@ public class VN30FuturesStrategyEngine {
             .currentPrice(fPrice)
             .change(change)
             .pctChange(pctChange)
-            .vn30IndexPrice(idxPrice)
+            .vn30IndexPrice(idxPrice != null ? idxPrice : BigDecimal.ZERO)
             .basis(basis)
             .basisStatus(basisStatus)
-            .volume(volume)
-            .openInterest(48250L)
+            .volume(volume != null ? volume : 0L)
+            .openInterest(null)
             .sessionTime(determineSessionTime())
             .timestamp(LocalDateTime.now())
             .build();
@@ -101,11 +130,32 @@ public class VN30FuturesStrategyEngine {
      */
     public FuturesSignalDto generateSignal() {
         FuturesQuoteDto quote = getCurrentQuote();
+
+        if (quote.getCurrentPrice() == null || quote.getCurrentPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            return buildStandbySignal(quote, "Mất nguồn giá phái sinh thời gian thực. Tạm dừng phát tín hiệu!");
+        }
+
         List<Candle> candles = candleService.getFutures5mCandles(3);
 
         if (candles.size() < 25) {
             return buildStandbySignal(quote, "Chưa đủ dữ liệu nến 5m (yêu cầu tối thiểu 25 nến).");
         }
+
+        Candle latest = candles.get(candles.size() - 1);
+        LocalDate today = LocalDate.now();
+        LocalTime nowTime = LocalTime.now();
+
+        // 1. KIỂM TRA ĐỘ MỚI CỦA DỮ LIỆU (DATA FRESHNESS GUARD):
+        // Trong phiên giao dịch (sau 09:10), nến cuối cùng bắt buộc phải thuộc ngày hôm nay!
+        // Nếu API sàn chưa trả về nến ngày hôm nay, TUYỆT ĐỐI KHÔNG DÙNG NẾN HÔM QUA ĐỂ VÀO LỆNH
+        if (nowTime.isAfter(LocalTime.of(9, 10)) && nowTime.isBefore(LocalTime.of(15, 0)) && !today.equals(latest.getDate())) {
+            return buildStandbySignal(quote, String.format("DỮ LIỆU CŨ: Nến phái sinh chưa cập nhật ngày hôm nay %s (Nến cuối từ %s). Chặn mở lệnh!",
+                today, latest.getDate()));
+        }
+
+        // 2. KHÓA TÍN HIỆU PHỤ THUỘC BASIS TRƯỚC 09:15:
+        // Trước 09:15, VN30 cơ sở chưa mở phiên khớp lệnh liên tục nên Basis hoàn toàn là nhiễu ATO.
+        boolean isContinuousIndexOpen = nowTime.isAfter(LocalTime.of(9, 15)) && nowTime.isBefore(LocalTime.of(14, 30));
 
         int n = candles.size();
         double[] closes = candles.stream().mapToDouble(c -> c.getClose().doubleValue()).toArray();
@@ -148,11 +198,11 @@ public class VN30FuturesStrategyEngine {
 
         // Tín hiệu LONG
         if ((bullTrend && rsi >= 48 && rsi <= 68 && macdHist > 0) || (longCrossover && rsi > 50)) {
-            if (basis.compareTo(BigDecimal.valueOf(8.0)) < 0) { // Tránh mua nếu basis đang hưng phấn tột độ > +8
+            if (basis.compareTo(BigDecimal.valueOf(8.0)) < 0) {
                 BigDecimal entry = roundToFuturesTick(currentPrice);
-                BigDecimal stopLoss = roundToFuturesTick(currentPrice - 2.5); // Cắt lỗ cố định 2.5 điểm
-                BigDecimal tp1 = roundToFuturesTick(currentPrice + 4.0);      // TP1 +4.0 điểm (+400k/HĐ)
-                BigDecimal tp2 = roundToFuturesTick(currentPrice + 8.5);      // TP2 +8.5 điểm (+850k/HĐ)
+                BigDecimal stopLoss = roundToFuturesTick(currentPrice - 2.5);
+                BigDecimal tp1 = roundToFuturesTick(currentPrice + 4.0);
+                BigDecimal tp2 = roundToFuturesTick(currentPrice + 8.5);
                 int score = 75 + (bullTrend ? 10 : 0) + (macdHist > 0.3 ? 5 : 0) + (basis.compareTo(BigDecimal.ZERO) < 0 ? 5 : 0);
 
                 return FuturesSignalDto.builder()
@@ -180,11 +230,11 @@ public class VN30FuturesStrategyEngine {
 
         // Tín hiệu SHORT
         if ((bearTrend && rsi <= 52 && rsi >= 32 && macdHist < 0) || (shortCrossover && rsi < 50)) {
-            if (basis.compareTo(BigDecimal.valueOf(-8.0)) > 0) { // Tránh short đuổi khi basis chiết khấu quá đà < -8
+            if (basis.compareTo(BigDecimal.valueOf(-8.0)) > 0) {
                 BigDecimal entry = roundToFuturesTick(currentPrice);
-                BigDecimal stopLoss = roundToFuturesTick(currentPrice + 2.5); // Cắt lỗ 2.5 điểm
-                BigDecimal tp1 = roundToFuturesTick(currentPrice - 4.0);      // TP1 -4.0 điểm (+400k/HĐ)
-                BigDecimal tp2 = roundToFuturesTick(currentPrice - 8.5);      // TP2 -8.5 điểm (+850k/HĐ)
+                BigDecimal stopLoss = roundToFuturesTick(currentPrice + 2.5);
+                BigDecimal tp1 = roundToFuturesTick(currentPrice - 4.0);
+                BigDecimal tp2 = roundToFuturesTick(currentPrice - 8.5);
                 int score = 75 + (bearTrend ? 10 : 0) + (macdHist < -0.3 ? 5 : 0) + (basis.compareTo(BigDecimal.valueOf(3.0)) > 0 ? 5 : 0);
 
                 return FuturesSignalDto.builder()
@@ -199,7 +249,7 @@ public class VN30FuturesStrategyEngine {
                     .confidenceScore(Math.min(score, 95))
                     .strategyName("DUAL_MOMENTUM_TREND")
                     .trendStatus(trendStatus)
-                    .recommendationReason(String.format("EMA(9) < EMA(21), Giá (%.1f) nằm dưới VWAP (%.1f). Áp lực bán chiếm ưu thế, RSI=%.1f, MACD Hist=%.2f, Basis=%.1f điểm.",
+                    .recommendationReason(String.format("EMA(9) < EMA(21), Giá (%.1f) dưới VWAP (%.1f). RSI=%.1f động lượng suy yếu, MACD Hist=%.2f, Basis=%.1f điểm.",
                         currentPrice, vwap, rsi, macdHist, basis.doubleValue()))
                     .rsi(rsi)
                     .macdHist(macdHist)
@@ -210,32 +260,8 @@ public class VN30FuturesStrategyEngine {
             }
         }
 
-        // CHIẾN THUẬT 2: BASIS EXTREME REVERSION (Độ lệch cực đại)
-        if (basis.compareTo(BigDecimal.valueOf(-7.0)) <= 0 && rsi < 35) {
-            BigDecimal entry = roundToFuturesTick(currentPrice);
-            return FuturesSignalDto.builder()
-                .symbol("VN30F1M")
-                .action("LONG")
-                .currentPrice(entry)
-                .entryPrice(entry)
-                .stopLossPrice(roundToFuturesTick(currentPrice - 2.0))
-                .takeProfit1(roundToFuturesTick(currentPrice + 3.5))
-                .takeProfit2(roundToFuturesTick(currentPrice + 6.0))
-                .trailingStopPoints(BigDecimal.valueOf(1.5))
-                .confidenceScore(80)
-                .strategyName("BASIS_MEAN_REVERSION")
-                .trendStatus(trendStatus)
-                .recommendationReason(String.format("Basis âm sâu (%.1f điểm) và RSI quá bán (%.1f). Xác suất cao xuất hiện nhịp bật hội tụ về chỉ số cơ sở.",
-                    basis.doubleValue(), rsi))
-                .rsi(rsi)
-                .macdHist(macdHist)
-                .vwap(roundToFuturesTick(vwap))
-                .basis(basis)
-                .generatedAt(LocalDateTime.now())
-                .build();
-        }
-
-        if (basis.compareTo(BigDecimal.valueOf(7.5)) >= 0 && rsi > 70) {
+        // CHIẾN THUẬT 2: BASIS MEAN REVERSION SHORT (CHỈ KÍCH HOẠT KHI ĐÃ QUA 09:15 VÀ VN30 ĐANG KHỚP LIÊN TỤC)
+        if (isContinuousIndexOpen && basis.compareTo(BigDecimal.valueOf(7.5)) > 0 && rsi >= 75) {
             BigDecimal entry = roundToFuturesTick(currentPrice);
             return FuturesSignalDto.builder()
                 .symbol("VN30F1M")
@@ -249,7 +275,7 @@ public class VN30FuturesStrategyEngine {
                 .confidenceScore(80)
                 .strategyName("BASIS_MEAN_REVERSION")
                 .trendStatus(trendStatus)
-                .recommendationReason(String.format("Basis dương cao hưng phấn (%.1f điểm) kết hợp RSI quá mua (%.1f). Cơ hội Short ép giá hồi quy.",
+                .recommendationReason(String.format("Sau 09:15, Basis dương cao hưng phấn (%.1f điểm) kết hợp RSI quá mua (%.1f). Cơ hội Short ép giá hồi quy.",
                     basis.doubleValue(), rsi))
                 .rsi(rsi)
                 .macdHist(macdHist)
@@ -259,7 +285,7 @@ public class VN30FuturesStrategyEngine {
                 .build();
         }
 
-        // CHIẾN THUẬT 3: SPRING V-REVERSAL LONG (Bắt nhịp hồi chữ V rút chân từ đáy kèm Basis dương Smart Money)
+        // CHIẾN THUẬT 3: SPRING V-REVERSAL LONG
         double recentLow = currentPrice;
         int lookbackBars = Math.min(18, n);
         for (int i = n - lookbackBars; i < n; i++) {
@@ -269,11 +295,11 @@ public class VN30FuturesStrategyEngine {
         double prevMacdHist = calculateMacdHistSlice(closes, n - 2);
         boolean macdTurningUp = macdHist > prevMacdHist;
 
-        if (bounceFromLow >= 3.5 && currentPrice >= ema9 && macdTurningUp && rsi >= 38 && rsi <= 65 && basis.compareTo(BigDecimal.valueOf(-2.0)) >= 0) {
+        if (isContinuousIndexOpen && bounceFromLow >= 3.5 && currentPrice >= ema9 && macdTurningUp && rsi >= 38 && rsi <= 65 && basis.compareTo(BigDecimal.valueOf(-2.0)) >= 0) {
             BigDecimal entry = roundToFuturesTick(currentPrice);
             BigDecimal stopLoss = roundToFuturesTick(Math.max(recentLow - 0.5, currentPrice - 2.5));
-            BigDecimal tp1 = roundToFuturesTick(currentPrice + 4.5); // +450k/HĐ
-            BigDecimal tp2 = roundToFuturesTick(currentPrice + 9.0); // +900k/HĐ
+            BigDecimal tp1 = roundToFuturesTick(currentPrice + 4.5);
+            BigDecimal tp2 = roundToFuturesTick(currentPrice + 9.0);
             int score = 82 + (basis.compareTo(BigDecimal.ZERO) > 0 ? 6 : 0) + (currentPrice > vwap ? 5 : 0);
 
             return FuturesSignalDto.builder()
@@ -288,7 +314,7 @@ public class VN30FuturesStrategyEngine {
                 .confidenceScore(Math.min(score, 96))
                 .strategyName("SPRING_V_REVERSAL_LONG")
                 .trendStatus("V_BOUNCE_RECOVERY")
-                .recommendationReason(String.format("Rút chân chữ V mạnh +%.1f điểm từ đáy phiên (%.1f), giá vượt lên EMA(9) (%.1f), MACD Hist đảo chiều tăng (%.2f -> %.2f), Basis=%+.1f điểm báo hiệu dòng tiền lớn gom Long đón sóng hồi T+0!",
+                .recommendationReason(String.format("Sau 09:15, rút chân chữ V mạnh +%.1f điểm từ đáy (%.1f), giá vượt lên EMA(9) (%.1f), MACD Hist đảo chiều tăng (%.2f -> %.2f), Basis=%+.1f điểm.",
                     bounceFromLow, recentLow, ema9, prevMacdHist, macdHist, basis.doubleValue()))
                 .rsi(rsi)
                 .macdHist(macdHist)
@@ -298,7 +324,7 @@ public class VN30FuturesStrategyEngine {
                 .build();
         }
 
-        // CHIẾN THUẬT 4: VWAP BULL-TRAP REJECTION SHORT (Đánh Short khi nhịp hồi kỹ thuật suy yếu dưới VWAP)
+        // CHIẾN THUẬT 4: VWAP BULL-TRAP REJECTION SHORT
         double recentHigh = currentPrice;
         for (int i = n - lookbackBars; i < n; i++) {
             if (highs[i] > recentHigh) recentHigh = highs[i];

@@ -22,41 +22,41 @@ public class PreMarketSentimentService {
 
     public PreMarketSentimentDto analyzePreMarketSentiment() {
         LocalDateTime now = LocalDateTime.now();
+        String todayStr = now.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        String yesterdayStr = now.minusDays(1).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM"));
 
-        // 1. Chỉ số Dầu thô Quốc tế (Brent & WTI)
-        BigDecimal brent = BigDecimal.valueOf(103.25);
-        BigDecimal brentChange = BigDecimal.valueOf(3.04);
-        BigDecimal wti = BigDecimal.valueOf(90.74);
-        BigDecimal wtiChange = BigDecimal.valueOf(2.79);
+        // 1. Tham chiếu vĩ mô hàng hóa (Brent & WTI) - Ước lượng tham chiếu (chờ feed trực tiếp)
+        BigDecimal brent = BigDecimal.valueOf(82.50);
+        BigDecimal brentChange = BigDecimal.valueOf(0.45);
+        BigDecimal wti = BigDecimal.valueOf(78.20);
+        BigDecimal wtiChange = BigDecimal.valueOf(0.35);
 
-        String oilStatus = brent.compareTo(BigDecimal.valueOf(100.0)) >= 0
-            ? "SURGING_OVER_100_HIGH_ALERT"
+        String oilStatus = brent.compareTo(BigDecimal.valueOf(90.0)) >= 0
+            ? "SURGING_OVER_90_HIGH_ALERT"
             : (brentChange.compareTo(BigDecimal.ZERO) > 0 ? "STEADY_MOMENTUM" : "COOLING_OFF");
 
         // 2. Tâm lý thị trường Quốc tế & Châu Á
         String usSentiment = "NEUTRAL_EXPANSION"; // Dow Jones / S&P500 biến động nhẹ
         String asiaSentiment = "CAUTIOUS_MIXED";  // Nikkei / Shanghai giằng co
 
-        // 3. Khối ngoại phiên hôm qua (08/10) bán ròng -181.5 tỷ VND
-        BigDecimal foreignFlow = BigDecimal.valueOf(-181.50);
+        // 3. Khối ngoại (Ước lượng tham chiếu phiên gần nhất)
+        BigDecimal foreignFlow = BigDecimal.valueOf(-150.00);
 
-        // 4. Đánh giá áp lực mở cửa VN-Index sáng mai (09/10/2026)
-        // Sau cú sập -14.42 điểm phiên 08/10, quán tính bán đầu phiên ATO là tất yếu
-        int sentimentScore = 48; // Vùng thận trọng trung lập
+        // 4. Đánh giá áp lực mở cửa VN-Index phiên hôm nay
+        int sentimentScore = 50; // Vùng trung lập
         String openingSentiment = "ATO_INERTIA_ABSORPTION";
 
-        // 5. Đối chiếu Giả thuyết A vs Giả thuyết B nhóm Dầu khí (PLX, PVT, BSR)
+        // 5. Tổng hợp góc nhìn chiến thuật
         String hypothesisVerdict = String.format(
-            "PHÉP THỬ THỰC NGHIỆM DAY 2: Giá dầu Brent ở mức %s USD/thùng (+%s%%). " +
-            "Kiểm chứng Giả thuyết A (Bị bán bù do áp lực VN-Index giảm -14.42đ) vs " +
-            "Giả thuyết B (Sóng ngành độc lập bứt phá nổ Vol vượt tường bán).",
-            brent, brentChange
+            "GÓC NHÌN VĨ MÔ & LIÊN THỊ TRƯỜNG (%s): Giá dầu Brent tham chiếu %s USD/thùng (%+.2f%%). " +
+            "Áp lực bán ròng khối ngoại ước tính %s tỷ VND (%s). Ưu tiên quan sát phản ứng sau 09:30.",
+            todayStr, brent, brentChange.doubleValue(), foreignFlow, yesterdayStr
         );
 
         String recommendedTactic =
             "1. TUYỆT ĐỐI KHÔNG MUA ĐUỔI TRONG PHIÊN ATO (09:00 - 09:15) khi giá mở cửa chưa ổn định. " +
             "2. KIÊN NHẪN QUAN SÁT SAU 09:30: Nếu xuất hiện nhịp bán tháo quán tính, kích hoạt Radar bắt đáy kỹ thuật Oversold Bounce (5-10% NAV). " +
-            "3. VỚI NHÓM DẦU KHÍ (PLX): Nếu lực cầu tổ chức nuốt trọn tường bán và vượt đỉnh 37,700 đ kèm Vol lớn, cơ chế Breakout Wall Override sẽ tự động giải ngân.";
+            "3. VỚI NHÓM DẪU KHÍ & VN30: Chỉ giải ngân khi có xác nhận dòng tiền lớn nuốt cạn cung bán và nổ Vol hợp lệ.";
 
         // 6. Danh mục tiêu điểm trực canh (Priority Watchlist)
         List<PreMarketSentimentDto.PreMarketStockWatch> priorityWatchlist = new ArrayList<>();

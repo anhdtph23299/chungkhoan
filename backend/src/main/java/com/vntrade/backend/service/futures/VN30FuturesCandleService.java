@@ -74,6 +74,11 @@ public class VN30FuturesCandleService {
         List<Candle> candles = fetchFromVndirect(symbol, resolution, days);
 
         if (candles.isEmpty()) {
+            List<Candle> lastKnownReal = candleCache.get(cacheKey);
+            if (lastKnownReal != null && !lastKnownReal.isEmpty()) {
+                cacheTimestamps.put(cacheKey, now);
+                return lastKnownReal;
+            }
             candles = generateFallbackCandles(symbol, resolution, days);
         }
 
