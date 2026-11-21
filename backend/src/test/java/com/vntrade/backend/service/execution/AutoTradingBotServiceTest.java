@@ -34,7 +34,12 @@ import com.vntrade.backend.service.risk.RiskService;
 import com.vntrade.backend.service.decision.MultiTimeframeConfluenceService;
 import com.vntrade.backend.service.risk.MarketCrashProtectionService;
 import com.vntrade.backend.service.decision.CanslimRatingService;
+import com.vntrade.backend.service.decision.MarketRegimeDetectionService;
+import com.vntrade.backend.service.decision.OversoldBounceDetectorService;
+import com.vntrade.backend.service.decision.PreMarketSentimentService;
 import com.vntrade.backend.service.decision.SmartMoneyFlowService;
+import com.vntrade.backend.service.futures.VN30FuturesTradingService;
+import com.vntrade.backend.service.marketdata.OrderBookService;
 import com.vntrade.backend.service.calculation.KalmanFilterTrendService;
 
 @ExtendWith(MockitoExtension.class)
@@ -81,6 +86,16 @@ public class AutoTradingBotServiceTest {
     private RelativeRotationGraphService relativeRotationGraphService;
     @Mock
     private BotDecisionAuditService botDecisionAuditService;
+    @Mock
+    private PreMarketSentimentService preMarketSentimentService;
+    @Mock
+    private OrderBookService orderBookService;
+    @Mock
+    private MarketRegimeDetectionService marketRegimeDetectionService;
+    @Mock
+    private OversoldBounceDetectorService oversoldBounceDetectorService;
+    @Mock
+    private VN30FuturesTradingService futuresTradingService;
 
     @InjectMocks
     private AutoTradingBotService botService;
@@ -89,6 +104,16 @@ public class AutoTradingBotServiceTest {
     void setUp() {
         when(spoofingDetectorService.detectSpoofing(anyString())).thenReturn(
             SpoofingDetectorDto.builder().isSafeToBuy(true).build()
+        );
+        when(orderBookService.getOrderBook(anyString())).thenReturn(
+            OrderBookDto.builder().symbol("FPT").currentPrice(BigDecimal.valueOf(140000)).realOrderBookAvailable(true).build()
+        );
+        when(preMarketSentimentService.getToxicNewsReason(anyString())).thenReturn(null);
+        when(confluenceService.analyzeMultiTimeframe(anyString())).thenReturn(
+            MultiTimeframeConfluenceDto.builder().symbol("FPT").confluenceScore(75).build()
+        );
+        when(canslimRatingService.rateStock(anyString())).thenReturn(
+            CanslimRatingDto.builder().symbol("FPT").canslimScore(80).canslimGrade("A").institutionalGrade(true).build()
         );
         when(kalmanFilterTrendService.analyzeKalmanTrend(anyString())).thenReturn(
             KalmanFilterTrendDto.builder().trendRegime("MODERATE_UPTREND").priceVelocity(BigDecimal.valueOf(150)).build()
@@ -135,7 +160,14 @@ public class AutoTradingBotServiceTest {
                 .build()
         );
 
-        // Market is safe
+        // Market is safe & in Confirmed Uptrend
+        when(marketRegimeDetectionService.detectMarketRegime()).thenReturn(
+            MarketRegimeDto.builder()
+                .currentRegime("CONFIRMED_UPTREND")
+                .regimeDisplayName("Confirmed Uptrend")
+                .recommendedMaxExposure(BigDecimal.valueOf(100.0))
+                .build()
+        );
         when(crashProtectionService.evaluateMarketCircuitBreaker()).thenReturn(
             MarketCrashProtectionDto.builder()
                 .allowNewPurchases(true)
@@ -293,14 +325,14 @@ public class AutoTradingBotServiceTest {
 
         botService.executeBotCycle();
 
-        // Theo chuẩn Shadow Mode: Không chặn lệnh T1, mở lệnh và ghi nhận Shadow Audit
-        verify(tradeService).createTrade(any());
-        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("SHADOW MODE AUDIT")));
-        verify(botDecisionAuditService).recordDecision(eq("FPT"), contains("BUY_T1_CORE"), any(), any(), contains("SPOOFING=VETO"), anyInt());
+        // Chuẩn V2 Active Gates: Sổ lệnh thật phát hiện Spoofing -> CHẶN LỆNH MUA & ghi Audit
+        verify(tradeService, never()).createTrade(any());
+        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("CHỐT CHẶN V2 TỪ CHỐI MUA")));
+        verify(botDecisionAuditService).recordDecision(eq("FPT"), eq("REJECTED_FILTER"), any(), eq("SPOOFING_TRAP"), contains("SPOOFING=VETO"), anyInt());
     }
 
     @Test
-    void testExecuteBotCycle_LiquidityTrapShadowModeRecordsVeto() {
+    void testExecuteBotCycle_LiquidityThinRecordsAuditWithoutBlocking() {
         StockScanResult mockScan = StockScanResult.builder()
                 .symbol("XYZ")
                 .exchange("UPCOM")
@@ -326,7 +358,7 @@ public class AutoTradingBotServiceTest {
             SmartMoneyFlowDto.builder().accumulationScore(75).build()
         );
 
-        // Mock illiquid stock
+        // Mock thin liquidity (logged in Audit V2 without blocking)
         when(liquidityAdjustedReturnService.calculateLiquidityAdjustedReturn(anyString(), anyInt(), any(), any(), any())).thenReturn(
             LiquidityAdjustedReturnDto.builder()
                 .symbol("XYZ")
@@ -341,14 +373,14 @@ public class AutoTradingBotServiceTest {
 
         botService.executeBotCycle();
 
-        // Khớp lệnh T1 và ghi nhận Shadow Mode Audit
+        // Khớp lệnh T1 và ghi nhận Audit V2 LIQ=THIN
         verify(tradeService).createTrade(any());
-        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("SHADOW MODE AUDIT")));
-        verify(botDecisionAuditService).recordDecision(eq("XYZ"), contains("BUY_T1_CORE"), any(), any(), contains("LIQ=VETO_ILLIQUID"), anyInt());
+        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("VƯỢT QUA TOÀN BỘ CHỐT CHẶN V2")));
+        verify(botDecisionAuditService).recordDecision(eq("XYZ"), contains("BUY_T1_CORE"), any(), any(), contains("LIQ=THIN"), anyInt());
     }
 
     @Test
-    void testExecuteBotCycle_RrgLaggingSouthwestShadowModeRecordsVeto() {
+    void testExecuteBotCycle_RrgLaggingSouthwestV2BlocksTrade() {
         StockScanResult mockScan = StockScanResult.builder()
                 .symbol("SAD")
                 .exchange("HOSE")
@@ -389,10 +421,30 @@ public class AutoTradingBotServiceTest {
 
         botService.executeBotCycle();
 
-        // Khớp lệnh T1 và ghi nhận RRG Veto vào Shadow Audit
-        verify(tradeService).createTrade(any());
-        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("SHADOW MODE AUDIT")));
-        verify(botDecisionAuditService).recordDecision(eq("SAD"), contains("BUY_T1_CORE"), any(), any(), contains("RRG=VETO_LAGGING_SW"), anyInt());
+        // Chuẩn V2 Active Gates: RRG LAGGING + SOUTHWEST -> CHẶN LỆNH MUA & ghi Audit
+        verify(tradeService, never()).createTrade(any());
+        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("CHỐT CHẶN V2 TỪ CHỐI MUA")));
+        verify(botDecisionAuditService).recordDecision(eq("SAD"), eq("REJECTED_FILTER"), any(), eq("RRG_TOXIC_LAGGING"), contains("RRG=VETO_LAGGING_SW"), anyInt());
+    }
+
+    @Test
+    void testExecuteBotCycle_ToxicNewsVetoBlocksTrade() {
+        StockScanResult mockScan = StockScanResult.builder()
+                .symbol("BAD")
+                .exchange("HOSE")
+                .action("STRONG_BUY")
+                .confidenceScore(90)
+                .price(BigDecimal.valueOf(20000))
+                .stopLoss(BigDecimal.valueOf(18800))
+                .targetPrice(BigDecimal.valueOf(23500))
+                .build();
+        when(strategyService.scanAllStocks()).thenReturn(List.of(mockScan));
+        when(preMarketSentimentService.getToxicNewsReason("BAD")).thenReturn("Phát hiện tin rủi ro CafeF [khởi tố]: BAD bị khởi tố");
+
+        botService.executeBotCycle();
+
+        verify(tradeService, never()).createTrade(any());
+        verify(botDecisionAuditService).recordDecision(eq("BAD"), eq("REJECTED_FILTER"), any(), eq("NEWS_RISK_VETO"), contains("NEWS=VETO"), anyInt());
     }
 
     @Test

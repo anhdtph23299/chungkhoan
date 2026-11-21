@@ -32,6 +32,8 @@ import com.vntrade.backend.service.decision.MultiTimeframeConfluenceService;
 import com.vntrade.backend.service.risk.MarketCrashProtectionService;
 import com.vntrade.backend.service.decision.CanslimRatingService;
 import com.vntrade.backend.service.decision.QuantitativeStrategyEngine;
+import com.vntrade.backend.service.decision.PreMarketSentimentService;
+import com.vntrade.backend.service.marketdata.OrderBookService;
 import com.vntrade.backend.service.calculation.KalmanFilterTrendService;
 
 @Service
@@ -62,6 +64,8 @@ public class AutoTradingBotService {
     private final com.vntrade.backend.service.decision.OversoldBounceDetectorService oversoldBounceDetectorService;
     private final com.vntrade.backend.service.decision.MarketRegimeDetectionService marketRegimeDetectionService;
     private final com.vntrade.backend.service.futures.VN30FuturesTradingService futuresTradingService;
+    private final PreMarketSentimentService preMarketSentimentService;
+    private final OrderBookService orderBookService;
 
     // Bot Configuration & State
     private boolean isRunning = true;
@@ -76,9 +80,8 @@ public class AutoTradingBotService {
     private boolean enforceMarketHours = true;
     private int cycleScanCount = 0;
 
-    // Forward Test Strategy: Core T1 (Breakout + Trend) + DEFCON-1 Circuit Breaker
-    // Các tầng lọc nâng cao (CANSLIM, MTF, RRG, OBI, Spoofing, Kalman) chạy SHADOW MODE để tích lũy dữ liệu
-    private String executionStrategy = "FORWARD_TEST_T1_CORE_DEFCON";
+    // Active Institutional Strategy V2: Core T1 + DEFCON-1 + Real Level-2 OrderBook (OBI/Spoofing/VWAP) + Foreign Flow + RRG/Kalman/MTF + CafeF Risk Veto
+    private String executionStrategy = "ACTIVE_QUANT_V2_REAL_ORDERBOOK";
     private BigDecimal maxDrawdownThreshold = BigDecimal.valueOf(20.0); // Ngưỡng MaxDD cảnh báo: 20.0%
     private BigDecimal riskPerTradePercent = BigDecimal.valueOf(1.50); // Rủi ro cho phép mỗi lệnh: 1.50% NAV
     private final java.util.Map<String, LocalDateTime> lastT25AlertTime = new java.util.concurrent.ConcurrentHashMap<>();
@@ -124,8 +127,8 @@ public class AutoTradingBotService {
     public void init() {
         if (botLogs.isEmpty()) {
             addLog(String.format("🚀 [KHỞI TẠO PAPER TRADING THÀNH CÔNG] Vốn: %,.0f đ | Chế độ: LIVE_PAPER_MONEY", accountCapital));
-            addLog("🔬 [CHIẾN LƯỢC FORWARD TEST] Cốt lõi: T1 (Breakout + Trend) + Cầu chì DEFCON-1 | 6 Tầng lọc nâng cao (CANSLIM, RRG, OBI, Spoofing, MTF, Kalman) chạy SHADOW MODE quan sát.");
-            addLog("📊 Hiệu suất thực tế được đo lường động từ kết quả các lệnh đã đóng, không dùng chỉ tiêu cứng hay nhãn Verified giả định.");
+            addLog("🔬 [CHIẾN LƯỢC V2 CHUẨN CHỈ] Cốt lõi T1 + DEFCON-1 | KÍCH HOẠT THẬT: Sổ lệnh Level-2 (OBI/Spoofing/VWAP), Dòng tiền ngoại, RRG, Kalman, MTF & Radar né tin xấu CafeF.");
+            addLog("📊 Hiệu suất thực tế được đo lường động từ kết quả các lệnh đã đóng & chốt từng phần, tuyệt đối trung thực.");
             addLog("🛡️ [DEFCON-1 BẢO VỆ] Cầu chì an toàn: NORMAL_DEFENSE | Thị trường ổn định.");
         }
         new Thread(() -> {
@@ -194,15 +197,31 @@ public class AutoTradingBotService {
     public BigDecimal getAvailableCash() {
         List<Trade> openTrades = tradeRepository.findOpenBuyTrades();
         List<Trade> allTrades = tradeRepository.findAllByOrderByTradeDateDesc();
-        BigDecimal realized = allTrades.stream()
-            .filter(t -> "closed".equalsIgnoreCase(t.getStatus()) && t.getPnl() != null)
-            .map(Trade::getPnl)
+        BigDecimal closedRealized = allTrades.stream()
+            .filter(t -> "closed".equalsIgnoreCase(t.getStatus()))
+            .map(t -> (t.getPnl() != null ? t.getPnl() : BigDecimal.ZERO)
+                .add(t.getPartialRealizedPnl() != null ? t.getPartialRealizedPnl() : BigDecimal.ZERO))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal futuresRealized = futuresTradingService != null ? futuresTradingService.getTotalRealizedPnlVnd() : BigDecimal.ZERO;
+        BigDecimal openPartialRealized = openTrades.stream()
+            .filter(t -> t.getPartialRealizedPnl() != null)
+            .map(Trade::getPartialRealizedPnl)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal futuresRealized = (futuresTradingService != null && futuresTradingService.getTotalRealizedPnlVnd() != null)
+            ? futuresTradingService.getTotalRealizedPnlVnd()
+            : BigDecimal.ZERO;
         BigDecimal invested = openTrades.stream()
-            .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())).add(t.getFee() != null ? t.getFee() : BigDecimal.ZERO))
+            .map(t -> {
+                BigDecimal buyVal = t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity()));
+                BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
+                int partialQty = t.getPartialClosedQuantity() != null ? t.getPartialClosedQuantity() : 0;
+                int origQty = t.getQuantity() + partialQty;
+                BigDecimal remainingFee = (partialQty > 0 && origQty > 0)
+                    ? fee.multiply(BigDecimal.valueOf(t.getQuantity())).divide(BigDecimal.valueOf(origQty), 0, RoundingMode.HALF_UP)
+                    : fee;
+                return buyVal.add(remainingFee);
+            })
             .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return accountCapital.add(realized).add(futuresRealized).subtract(invested);
+        return accountCapital.add(closedRealized).add(openPartialRealized).add(futuresRealized).subtract(invested);
     }
 
     public BigDecimal getInvestedStockValue() {
@@ -227,7 +246,9 @@ public class AutoTradingBotService {
     public BigDecimal getCurrentNav() {
         BigDecimal cash = getAvailableCash();
         BigDecimal stockValue = getInvestedStockValue();
-        BigDecimal futuresUnrealized = futuresTradingService != null ? futuresTradingService.getUnrealizedPnlVnd() : BigDecimal.ZERO;
+        BigDecimal futuresUnrealized = (futuresTradingService != null && futuresTradingService.getUnrealizedPnlVnd() != null)
+            ? futuresTradingService.getUnrealizedPnlVnd()
+            : BigDecimal.ZERO;
         return cash.add(stockValue).add(futuresUnrealized);
     }
 
@@ -537,12 +558,14 @@ public class AutoTradingBotService {
                 }
 
                 int finalShares = sizing.getMaxSharesToBuy();
-                if (proposedCost.compareTo(availableCash) > 0) {
-                    int maxAffordable = availableCash.divide(scan.getPrice(), 0, RoundingMode.FLOOR).intValue();
+                BigDecimal feeMultiplier = BigDecimal.valueOf(1.0015);
+                if (proposedCost.multiply(feeMultiplier).compareTo(availableCash) > 0) {
+                    BigDecimal effectivePrice = scan.getPrice().multiply(feeMultiplier);
+                    int maxAffordable = availableCash.divide(effectivePrice, 0, RoundingMode.FLOOR).intValue();
                     maxAffordable = (maxAffordable / 100) * 100; // Làm tròn lô 100 HOSE
                     if (maxAffordable < 100) {
-                        addLog(String.format("🛡️ [QUẢN TRỊ TIỀN MẶT] Bỏ qua %s: Tiền mặt còn %,.0f đ không đủ mua tối thiểu 1 lô 100 cp (cần %,.0f đ).",
-                            scan.getSymbol(), availableCash.doubleValue(), scan.getPrice().multiply(BigDecimal.valueOf(100)).doubleValue()));
+                        addLog(String.format("🛡️ [QUẢN TRỊ TIỀN MẶT] Bỏ qua %s: Tiền mặt còn %,.0f đ không đủ mua tối thiểu 1 lô 100 cp + phí (cần %,.0f đ).",
+                            scan.getSymbol(), availableCash.doubleValue(), effectivePrice.multiply(BigDecimal.valueOf(100)).doubleValue()));
                         continue;
                     }
                     finalShares = maxAffordable;
@@ -552,96 +575,26 @@ public class AutoTradingBotService {
                 }
 
                 // =========================================================================
-                // 2. CHẾ ĐỘ BÓNG MỜ (SHADOW MODE): THU THẬP ĐÁNH GIÁ 6 TẦNG LỌC NÂNG CAO
-                // (Không chặn lệnh mua T1 - Ghi nhận vào DB để đối soát sau 5 & 10 phiên)
+                // 2. BỘ LỌC ĐỊNH CHẾ V2 (ACTIVE GATES): NÉ TIN XẤU, CÁ MẬP KÊ ẢO, TƯỜNG BÁN, RRG/KALMAN/MTF
                 // =========================================================================
-                StringBuilder shadowLog = new StringBuilder();
-
-                // 2.1. Shadow CANSLIM
-                try {
-                    CanslimRatingDto canslim = canslimRatingService.rateStock(scan.getSymbol());
-                    shadowLog.append("CANSLIM=").append(canslim.isInstitutionalGrade() ? "PASS" : "VETO(" + canslim.getCanslimGrade() + ":" + canslim.getCanslimScore() + "d)").append("; ");
-                } catch (Exception e) {
-                    shadowLog.append("CANSLIM=ERR; ");
-                }
-
-                // 2.2. Shadow MTF Confluence
-                try {
-                    MultiTimeframeConfluenceDto mtf = confluenceService.analyzeMultiTimeframe(scan.getSymbol());
-                    shadowLog.append("MTF=").append(mtf.getConfluenceScore() >= 65 ? "PASS" : "VETO(" + mtf.getConfluenceScore() + "d)").append("; ");
-                } catch (Exception e) {
-                    shadowLog.append("MTF=ERR; ");
-                }
-
-                // 2.3. Shadow RRG Mansfield
-                try {
-                    RrgItemDto rrg = relativeRotationGraphService.calculateSingleStockRrg(scan.getSymbol());
-                    if (rrg != null) {
-                        boolean isToxicLagging = "LAGGING".equals(rrg.getQuadrant()) && "SOUTHWEST".equals(rrg.getHeadingDirection());
-                        shadowLog.append("RRG=").append(isToxicLagging ? "VETO_LAGGING_SW" : rrg.getQuadrant()).append("; ");
-                    } else {
-                        shadowLog.append("RRG=NONE; ");
+                PreTradeFilterOutcome filterOutcome = evaluateInstitutionalEntryFilters(
+                    scan.getSymbol(), finalShares, scan.getPrice(), scan.getTargetPrice(), true
+                );
+                if (!filterOutcome.allowed()) {
+                    addLog(String.format("🚫 [CHỐT CHẶN V2 TỪ CHỐI MUA] %s: %s | Chi tiết: [%s]",
+                        scan.getSymbol(), filterOutcome.vetoReason(), filterOutcome.auditSummary()));
+                    if (botDecisionAuditService != null) {
+                        botDecisionAuditService.recordDecision(
+                            scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(),
+                            filterOutcome.vetoFilterCode(), filterOutcome.vetoReason() + " | " + filterOutcome.auditSummary(),
+                            scan.getConfidenceScore()
+                        );
                     }
-                } catch (Exception e) {
-                    shadowLog.append("RRG=ERR; ");
+                    continue;
                 }
 
-                // 2.4. Shadow OBI Level-2
-                try {
-                    OrderBookImbalanceDto obi = orderBookImbalanceService.analyzeMicrostructure(scan.getSymbol());
-                    if (obi != null) {
-                        boolean isAskWall = "ASK_WALL_RESISTANCE".equals(obi.getWallDetected());
-                        boolean isNegativeObi = obi.getOrderBookImbalanceRatio() != null && obi.getOrderBookImbalanceRatio().compareTo(BigDecimal.valueOf(-0.35)) < 0;
-                        shadowLog.append("OBI=").append((isAskWall || isNegativeObi) ? "VETO_WALL" : "PASS").append("; ");
-                    } else {
-                        shadowLog.append("OBI=NONE; ");
-                    }
-                } catch (Exception e) {
-                    shadowLog.append("OBI=ERR; ");
-                }
-
-                // 2.5. Shadow Spoofing Detector
-                try {
-                    SpoofingDetectorDto spoofing = spoofingDetectorService.detectSpoofing(scan.getSymbol());
-                    if (spoofing != null) {
-                        shadowLog.append("SPOOFING=").append(!spoofing.isSafeToBuy() ? "VETO(" + spoofing.getLayeringPattern() + ")" : "PASS").append("; ");
-                    } else {
-                        shadowLog.append("SPOOFING=NONE; ");
-                    }
-                } catch (Exception e) {
-                    shadowLog.append("SPOOFING=ERR; ");
-                }
-
-                // 2.6. Shadow Kalman Velocity
-                try {
-                    KalmanFilterTrendDto kalman = kalmanFilterTrendService.analyzeKalmanTrend(scan.getSymbol());
-                    if (kalman != null) {
-                        shadowLog.append("KALMAN=").append("BEARISH_DOWNWARD".equals(kalman.getTrendRegime()) ? "VETO_BEAR" : "PASS").append("; ");
-                    } else {
-                        shadowLog.append("KALMAN=NONE; ");
-                    }
-                } catch (Exception e) {
-                    shadowLog.append("KALMAN=ERR; ");
-                }
-
-                // 2.7. Shadow Smart Money & Liquidity
-                try {
-                    SmartMoneyFlowDto smf = smartMoneyFlowService.analyzeSmartMoney(scan.getSymbol());
-                    shadowLog.append("SMF=").append(smf.getAccumulationScore() >= 40 ? "PASS" : "VETO(" + smf.getAccumulationScore() + "d)").append("; ");
-                } catch (Exception e) {
-                    shadowLog.append("SMF=ERR; ");
-                }
-
-                try {
-                    LiquidityAdjustedReturnDto liq = liquidityAdjustedReturnService.calculateLiquidityAdjustedReturn(
-                        scan.getSymbol(), finalShares, scan.getPrice(), scan.getTargetPrice(), accountCapital);
-                    shadowLog.append("LIQ=").append(liq.isLiquidEnough() ? "PASS" : "VETO_ILLIQUID");
-                } catch (Exception e) {
-                    shadowLog.append("LIQ=ERR");
-                }
-
-                String shadowEvaluation = shadowLog.toString();
-                addLog(String.format("🕵️ [SHADOW MODE AUDIT] %s: Kích hoạt mua theo T1 Core. Phán quyết bóng mờ: [%s] (Không chặn lệnh, lưu vào DB để đối soát 5-10 phiên sau)",
+                String shadowEvaluation = filterOutcome.auditSummary();
+                addLog(String.format("✅ [VƯỢT QUA TOÀN BỘ CHỐT CHẶN V2] %s: Đạt chuẩn kỹ thuật + Vi cấu trúc thật + Vĩ mô. Hồ sơ: [%s]",
                     scan.getSymbol(), shadowEvaluation));
 
                 // =========================================================================
@@ -660,7 +613,7 @@ public class AutoTradingBotService {
                     .strategy("T1_BREAKOUT_TREND_CORE")
                     .stopLoss(stopLossPrice)
                     .takeProfit(targetPrice)
-                    .reason(String.format("🤖 Bot Forward Test T1 Core | Risk: %s%% NAV | Shadow Audit: %s", dynamicRisk, shadowEvaluation))
+                    .reason(String.format("🤖 Bot Quant V2 Core | Risk: %s%% NAV | Audit V2: %s", dynamicRisk, shadowEvaluation))
                     .build();
 
                 Trade created = tradeService.createTrade(tradeReq);
@@ -1193,10 +1146,22 @@ public class AutoTradingBotService {
                         // Giải ngân tỷ trọng chiến thuật thăm dò: 15% - 20% NAV (không vượt tiền mặt)
                         BigDecimal tacticalBudget = getCurrentNav().multiply(BigDecimal.valueOf(0.18)).min(availableCash);
                         if (tacticalBudget.compareTo(BigDecimal.valueOf(3_000_000)) >= 0) {
-                            int shares = tacticalBudget.divide(topCandidate.getCurrentPrice(), 0, RoundingMode.FLOOR).intValue();
+                            BigDecimal effectiveEntry = topCandidate.getCurrentPrice().multiply(BigDecimal.valueOf(1.0015));
+                            int shares = tacticalBudget.divide(effectiveEntry, 0, RoundingMode.FLOOR).intValue();
                             shares = (shares / 100) * 100; // Làm tròn lô 100 HOSE
                             if (shares >= 100) {
                                 BigDecimal entryPrice = topCandidate.getCurrentPrice();
+                                BigDecimal proposedCost = entryPrice.multiply(BigDecimal.valueOf(shares));
+                                if (!riskService.isSectorAllocationAllowed(topCandidate.getSymbol(), proposedCost, accountCapital)) {
+                                    return;
+                                }
+                                PreTradeFilterOutcome guard = evaluateInstitutionalEntryFilters(
+                                    topCandidate.getSymbol(), shares, entryPrice, topCandidate.getTacticalTargetPrice(), false
+                                );
+                                if (!guard.allowed()) {
+                                    addLog(String.format("🚫 [CHỐT CHẶN BẮT ĐÁY V2] Bỏ qua %s: %s", topCandidate.getSymbol(), guard.vetoReason()));
+                                    return;
+                                }
                                 BigDecimal sl = topCandidate.getTacticalStopLoss() != null ? topCandidate.getTacticalStopLoss() : entryPrice.multiply(BigDecimal.valueOf(0.96));
                                 BigDecimal tp = topCandidate.getTacticalTargetPrice() != null ? topCandidate.getTacticalTargetPrice() : entryPrice.multiply(BigDecimal.valueOf(1.08));
 
@@ -1283,11 +1248,23 @@ public class AutoTradingBotService {
             BigDecimal pilotBudget = getCurrentNav().multiply(BigDecimal.valueOf(0.20)).min(availableCash);
             if (pilotBudget.compareTo(BigDecimal.valueOf(3_000_000)) < 0) return;
 
-            int shares = pilotBudget.divide(topLeader.getPrice(), 0, RoundingMode.FLOOR).intValue();
+            BigDecimal effectiveEntry = topLeader.getPrice().multiply(BigDecimal.valueOf(1.0015));
+            int shares = pilotBudget.divide(effectiveEntry, 0, RoundingMode.FLOOR).intValue();
             shares = (shares / 100) * 100;
             if (shares < 100) return;
 
             BigDecimal entryPrice = topLeader.getPrice();
+            BigDecimal proposedCost = entryPrice.multiply(BigDecimal.valueOf(shares));
+            if (!riskService.isSectorAllocationAllowed(topLeader.getSymbol(), proposedCost, accountCapital)) {
+                return;
+            }
+            PreTradeFilterOutcome guard = evaluateInstitutionalEntryFilters(
+                topLeader.getSymbol(), shares, entryPrice, topLeader.getTargetPrice(), false
+            );
+            if (!guard.allowed()) {
+                addLog(String.format("🚫 [CHỐT CHẶN KHÁNG BÃO V2] Bỏ qua %s: %s", topLeader.getSymbol(), guard.vetoReason()));
+                return;
+            }
             BigDecimal sl = topLeader.getStopLoss() != null ? topLeader.getStopLoss()
                 : com.vntrade.backend.service.decision.QuantitativeStrategyEngine.roundToVietnameseTick(entryPrice.multiply(BigDecimal.valueOf(0.955)));
             BigDecimal tp = topLeader.getTargetPrice() != null ? topLeader.getTargetPrice()
@@ -1316,5 +1293,168 @@ public class AutoTradingBotService {
         } catch (Exception e) {
             log.debug("Anti-market leader scan error: {}", e.getMessage());
         }
+    }
+
+    private record PreTradeFilterOutcome(boolean allowed, String vetoFilterCode, String vetoReason, String auditSummary) {}
+
+    /**
+     * Bộ lọc Định chế Hợp nhất V2:
+     * 1. CafeF News Risk Veto (chặn tin khởi tố/bắt bớ/cắt margin/lỗ nặng)
+     * 2. Sổ lệnh Level-2 THẬT: Chặn bẫy kê mua ảo (Spoofing), kéo rướn VWAP, tường bán đè áp đảo (OBI), khối ngoại xả ròng
+     * 3. Với lệnh Breakout xu hướng (applyTrendGates=true): Chặn thêm RRG cắm đầu tụt hậu, Kalman giảm và MTF xung đột nặng
+     */
+    private PreTradeFilterOutcome evaluateInstitutionalEntryFilters(
+            String symbol, int shares, BigDecimal price, BigDecimal targetPrice, boolean applyTrendGates) {
+        StringBuilder summary = new StringBuilder();
+        String vetoCode = null;
+        String vetoReason = null;
+
+        // 1. CafeF News Risk Veto
+        try {
+            String toxicNews = preMarketSentimentService.getToxicNewsReason(symbol);
+            if (toxicNews != null) {
+                summary.append("NEWS=VETO; ");
+                vetoCode = "NEWS_RISK_VETO";
+                vetoReason = toxicNews;
+            } else {
+                summary.append("NEWS=PASS; ");
+            }
+        } catch (Exception e) {
+            summary.append("NEWS=ERR; ");
+        }
+
+        // 2. Real Level-2 Order Book Microstructure (chỉ kích hoạt chặn khi có độ sâu sổ lệnh thật trong phiên)
+        OrderBookDto ob = null;
+        try {
+            ob = orderBookService.getOrderBook(symbol);
+        } catch (Exception ignored) {}
+        boolean hasRealDepth = ob != null && ob.isRealOrderBookAvailable();
+
+        try {
+            SpoofingDetectorDto spoofing = spoofingDetectorService.detectSpoofing(symbol);
+            if (spoofing != null && hasRealDepth && !spoofing.isSafeToBuy()) {
+                summary.append("SPOOFING=VETO(").append(spoofing.getLayeringPattern()).append("); ");
+                if (vetoCode == null) {
+                    vetoCode = "SPOOFING_TRAP";
+                    vetoReason = spoofing.getInstitutionalActionVerdict();
+                }
+            } else {
+                summary.append("SPOOFING=").append(hasRealDepth ? "PASS" : "NO_DEPTH").append("; ");
+            }
+        } catch (Exception e) {
+            summary.append("SPOOFING=ERR; ");
+        }
+
+        try {
+            OrderBookImbalanceDto obi = orderBookImbalanceService.analyzeMicrostructure(symbol);
+            if (obi != null && hasRealDepth) {
+                boolean isAskWall = "ASK_WALL_RESISTANCE".equals(obi.getWallDetected());
+                boolean isHeavyDump = obi.getOrderBookImbalanceRatio() != null
+                    && obi.getOrderBookImbalanceRatio().compareTo(BigDecimal.valueOf(-0.45)) < 0;
+                if (isAskWall && isHeavyDump) {
+                    summary.append("OBI=VETO_ASK_WALL; ");
+                    if (vetoCode == null) {
+                        vetoCode = "OBI_ASK_WALL";
+                        vetoReason = String.format("Tường bán đè thật tại %,.0f đ (%s CP), OBI=%.2f",
+                            obi.getWallPrice() != null ? obi.getWallPrice().doubleValue() : 0.0,
+                            obi.getWallVolume(), obi.getOrderBookImbalanceRatio().doubleValue());
+                    }
+                } else {
+                    summary.append("OBI=PASS; ");
+                }
+            } else {
+                summary.append("OBI=NO_DEPTH; ");
+            }
+        } catch (Exception e) {
+            summary.append("OBI=ERR; ");
+        }
+
+        try {
+            ForeignFlowRiskDto foreign = foreignFlowRiskService.evaluateForeignFlowRisk(symbol);
+            if (foreign != null && hasRealDepth && "FOREIGN_DUMP_WARNING".equals(foreign.getFiiFlowVerdict())) {
+                summary.append("FII=VETO_DUMP; ");
+                if (vetoCode == null) {
+                    vetoCode = "FOREIGN_DUMP_WARNING";
+                    vetoReason = foreign.getEarlyWarningAlerts().isEmpty()
+                        ? "Khối ngoại xả ròng mạnh trong phiên" : foreign.getEarlyWarningAlerts().get(0);
+                }
+            } else {
+                summary.append("FII=").append(foreign != null ? foreign.getFiiFlowVerdict() : "NONE").append("; ");
+            }
+        } catch (Exception e) {
+            summary.append("FII=ERR; ");
+        }
+
+        // 3. Trend-based Institutional Filters (RRG, Kalman, MTF) trên nến thật
+        try {
+            RrgItemDto rrg = relativeRotationGraphService.calculateSingleStockRrg(symbol);
+            if (rrg != null) {
+                boolean isToxicLagging = "LAGGING".equals(rrg.getQuadrant()) && "SOUTHWEST".equals(rrg.getHeadingDirection());
+                summary.append("RRG=").append(isToxicLagging ? "VETO_LAGGING_SW" : rrg.getQuadrant()).append("; ");
+                if (applyTrendGates && isToxicLagging && vetoCode == null) {
+                    vetoCode = "RRG_TOXIC_LAGGING";
+                    vetoReason = "Cổ phiếu đang ở góc suy kiệt LAGGING hướng SOUTHWEST (yếu hơn thị trường chung)";
+                }
+            } else {
+                summary.append("RRG=NONE; ");
+            }
+        } catch (Exception e) {
+            summary.append("RRG=ERR; ");
+        }
+
+        try {
+            KalmanFilterTrendDto kalman = kalmanFilterTrendService.analyzeKalmanTrend(symbol);
+            if (kalman != null) {
+                boolean isBearish = "BEARISH_DOWNWARD".equals(kalman.getTrendRegime());
+                summary.append("KALMAN=").append(isBearish ? "VETO_BEAR" : "PASS").append("; ");
+                if (applyTrendGates && isBearish && vetoCode == null) {
+                    vetoCode = "KALMAN_BEARISH";
+                    vetoReason = "Bộ lọc Kalman xác nhận vận tốc xu hướng đang cắm xuống (BEARISH_DOWNWARD)";
+                }
+            } else {
+                summary.append("KALMAN=NONE; ");
+            }
+        } catch (Exception e) {
+            summary.append("KALMAN=ERR; ");
+        }
+
+        try {
+            MultiTimeframeConfluenceDto mtf = confluenceService.analyzeMultiTimeframe(symbol);
+            if (mtf != null) {
+                int mtfScore = mtf.getConfluenceScore();
+                summary.append("MTF=").append(mtfScore >= 45 ? "PASS(" + mtfScore + ")" : "VETO(" + mtfScore + ")").append("; ");
+                if (applyTrendGates && mtfScore < 45 && vetoCode == null) {
+                    vetoCode = "MTF_CONFLICT";
+                    vetoReason = "Xung đột đa khung giờ (MTF Score = " + mtfScore + " < 45)";
+                }
+            } else {
+                summary.append("MTF=NONE; ");
+            }
+        } catch (Exception e) {
+            summary.append("MTF=ERR; ");
+        }
+
+        // 4. Thông tin tham chiếu bổ sung (CANSLIM, SMF, LIQ)
+        try {
+            CanslimRatingDto canslim = canslimRatingService.rateStock(symbol);
+            summary.append("CANSLIM=").append(canslim.getCanslimScore()).append("d; ");
+        } catch (Exception e) {
+            summary.append("CANSLIM=ERR; ");
+        }
+        try {
+            SmartMoneyFlowDto smf = smartMoneyFlowService.analyzeSmartMoney(symbol);
+            summary.append("SMF=").append(smf.getAccumulationScore()).append("d; ");
+        } catch (Exception e) {
+            summary.append("SMF=ERR; ");
+        }
+        try {
+            LiquidityAdjustedReturnDto liq = liquidityAdjustedReturnService.calculateLiquidityAdjustedReturn(
+                symbol, shares, price, targetPrice, accountCapital);
+            summary.append("LIQ=").append(liq.isLiquidEnough() ? "PASS" : "THIN");
+        } catch (Exception e) {
+            summary.append("LIQ=ERR");
+        }
+
+        return new PreTradeFilterOutcome(vetoCode == null, vetoCode, vetoReason, summary.toString());
     }
 }

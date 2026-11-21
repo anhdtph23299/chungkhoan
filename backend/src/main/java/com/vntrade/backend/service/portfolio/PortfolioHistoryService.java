@@ -35,34 +35,43 @@ public class PortfolioHistoryService {
         List<Trade> openTrades = tradeRepository.findOpenBuyTrades();
         List<Trade> allTrades = tradeRepository.findAllByOrderByTradeDateDesc();
 
-        BigDecimal invested = BigDecimal.ZERO;
+        BigDecimal investedCostWithFee = BigDecimal.ZERO;
         BigDecimal unrealized = BigDecimal.ZERO;
+        BigDecimal partialRealized = BigDecimal.ZERO;
 
         for (Trade t : openTrades) {
             BigDecimal cost = t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity()));
-            invested = invested.add(cost);
+            BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
+            investedCostWithFee = investedCostWithFee.add(cost).add(fee);
             if (t.getPnl() != null) {
                 unrealized = unrealized.add(t.getPnl());
+            }
+            if (t.getPartialRealizedPnl() != null) {
+                partialRealized = partialRealized.add(t.getPartialRealizedPnl());
             }
         }
 
         BigDecimal realized = allTrades.stream()
-            .filter(t -> "closed".equals(t.getStatus()) && t.getPnl() != null)
-            .map(Trade::getPnl)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+            .filter(t -> "closed".equalsIgnoreCase(t.getStatus()))
+            .map(t -> (t.getPnl() != null ? t.getPnl() : BigDecimal.ZERO)
+                .add(t.getPartialRealizedPnl() != null ? t.getPartialRealizedPnl() : BigDecimal.ZERO))
+            .reduce(BigDecimal.ZERO, BigDecimal::add)
+            .add(partialRealized);
 
-        long closedCount = allTrades.stream().filter(t -> "closed".equals(t.getStatus())).count();
-        long winCount = allTrades.stream().filter(t -> "closed".equals(t.getStatus()) && t.getPnl() != null && t.getPnl().compareTo(BigDecimal.ZERO) > 0).count();
+        long closedCount = allTrades.stream().filter(t -> "closed".equalsIgnoreCase(t.getStatus())).count();
+        long winCount = allTrades.stream()
+            .filter(t -> "closed".equalsIgnoreCase(t.getStatus()) && t.getPnl() != null && t.getPnl().compareTo(BigDecimal.ZERO) > 0)
+            .count();
 
         BigDecimal winRate = closedCount > 0
             ? BigDecimal.valueOf(winCount * 100.0 / closedCount).setScale(2, RoundingMode.HALF_UP)
             : BigDecimal.ZERO;
 
-        BigDecimal cash = INITIAL_CAPITAL.add(realized).subtract(invested);
-        if (cash.compareTo(BigDecimal.ZERO) < 0) {
-            cash = BigDecimal.ZERO;
-        }
-        BigDecimal currentMarketValue = invested.add(unrealized);
+        BigDecimal cash = INITIAL_CAPITAL.add(realized).subtract(investedCostWithFee);
+        BigDecimal investedCost = openTrades.stream()
+            .map(t -> t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity())))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal currentMarketValue = investedCost.add(unrealized);
         BigDecimal totalNav = cash.add(currentMarketValue);
 
         BigDecimal totalReturn = INITIAL_CAPITAL.compareTo(BigDecimal.ZERO) > 0
@@ -97,7 +106,6 @@ public class PortfolioHistoryService {
     public List<PortfolioSnapshot> getEquityCurve() {
         List<PortfolioSnapshot> list = snapshotRepository.findAllByOrderBySnapshotTimeAsc();
         if (list.isEmpty()) {
-            // Khởi tạo điểm dữ liệu ban đầu
             initializeBaselineSnapshots();
             return snapshotRepository.findAllByOrderBySnapshotTimeAsc();
         }
@@ -108,88 +116,74 @@ public class PortfolioHistoryService {
     public List<PortfolioSnapshot> resetAndReseedSnapshots() {
         snapshotRepository.deleteAll();
         initializeBaselineSnapshots();
-        recordCurrentSnapshot();
         return snapshotRepository.findAllByOrderBySnapshotTimeAsc();
     }
 
+    /**
+     * Khởi tạo đúng 1 điểm dữ liệu gốc trung thực (100,000,000 đ tiền mặt, 0% lãi giả lập).
+     */
     @Transactional
     public void initializeBaselineSnapshots() {
         LocalDate today = LocalDate.now();
-        BigDecimal currentNav = INITIAL_CAPITAL;
-
-        // Mô phỏng chuỗi 60 phiên giao dịch (~3 tháng qua: Tháng 7, 8, 9, 10/2026) theo kỷ luật định chế
-        // Lợi nhuận hàng ngày thực tế: trung bình +0.3% - +0.8%, có các phiên rung lắc điều chỉnh lành mạnh
-        double[] simulatedProfits = {
-            0, 850_000, 1_200_000, -600_000, 1_500_000, 450_000, -800_000, 1_900_000, 750_000, 1_100_000, // Tuần 1-2 (T7)
-            -500_000, 2_100_000, 1_300_000, 0, 1_400_000, -1_100_000, 2_400_000, 800_000, 1_650_000, -400_000, // Tuần 3-4 (T7/T8)
-            1_800_000, 950_000, -750_000, 2_300_000, 1_100_000, -900_000, 1_700_000, 2_050_000, 600_000, 1_400_000, // Tuần 5-6 (T8)
-            -1_200_000, 2_600_000, 1_500_000, -850_000, 1_950_000, 700_000, 2_200_000, -600_000, 1_350_000, 800_000, // Tuần 7-8 (T8/T9)
-            -1_050_000, 2_800_000, 1_600_000, -500_000, 2_100_000, 1_250_000, -900_000, 1_800_000, 900_000, 1_500_000, // Tuần 9-10 (T9)
-            -700_000, 2_200_000, 1_400_000, -1_100_000, 2_500_000, 850_000, 0, 1_650_000, 950_000, 0 // Tuần 11-12 (T10)
-        };
-
-        List<PortfolioSnapshot> seedList = new ArrayList<>();
-        int daysBack = simulatedProfits.length * 7 / 5; // Tính cả ngày cuối tuần
-
-        int tradeIndex = 0;
-        int closedTradeAccum = 0;
-        for (int i = 0; i < simulatedProfits.length; i++) {
-            currentNav = currentNav.add(BigDecimal.valueOf(simulatedProfits[i]));
-            LocalDate d = today.minusDays(simulatedProfits.length - 1 - i);
-
-            BigDecimal retPct = INITIAL_CAPITAL.compareTo(BigDecimal.ZERO) > 0
-                ? currentNav.subtract(INITIAL_CAPITAL).divide(INITIAL_CAPITAL, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
-                : BigDecimal.ZERO;
-
-            if (simulatedProfits[i] != 0) closedTradeAccum++;
-
-            seedList.add(PortfolioSnapshot.builder()
-                .snapshotTime(d.atTime(15, 0))
-                .snapshotDate(d)
-                .cashBalance(currentNav.multiply(BigDecimal.valueOf(0.60)).setScale(0, RoundingMode.HALF_UP))
-                .investedValue(currentNav.multiply(BigDecimal.valueOf(0.40)).setScale(0, RoundingMode.HALF_UP))
-                .totalNav(currentNav)
-                .realizedPnl(currentNav.subtract(INITIAL_CAPITAL))
-                .unrealizedPnl(BigDecimal.valueOf(1_500_000))
-                .totalProfitPercent(retPct)
-                .winRate(BigDecimal.valueOf(73.5))
-                .totalTrades(Math.max(1, closedTradeAccum))
-                .openPositionsCount(3)
-                .build());
-        }
-        snapshotRepository.saveAll(seedList);
+        PortfolioSnapshot initial = PortfolioSnapshot.builder()
+            .snapshotTime(LocalDateTime.now())
+            .snapshotDate(today)
+            .cashBalance(INITIAL_CAPITAL)
+            .investedValue(BigDecimal.ZERO)
+            .totalNav(INITIAL_CAPITAL)
+            .realizedPnl(BigDecimal.ZERO)
+            .unrealizedPnl(BigDecimal.ZERO)
+            .totalProfitPercent(BigDecimal.ZERO)
+            .winRate(BigDecimal.ZERO)
+            .totalTrades(0)
+            .openPositionsCount(0)
+            .build();
+        snapshotRepository.save(initial);
     }
 
     /**
      * So sánh hiệu suất danh mục đa kỳ: Hôm nay vs 1 Ngày trước (DoD), 7 Ngày trước (WoW), 30 Ngày trước (MoM), 3 Tháng trước (QoQ)
-     * và bảng phân bổ hiệu suất chi tiết theo từng tháng.
+     * với toàn bộ số liệu tính toán trung thực từ dữ liệu DB thực tế.
      */
     public PerformanceComparisonDto getPerformanceComparison() {
-        // Luôn tính toán NAV thời gian thực từ các vị thế đang mở và lệnh đã đóng
         List<Trade> openTrades = tradeRepository.findOpenBuyTrades();
         List<Trade> allTrades = tradeRepository.findAllByOrderByTradeDateDesc();
 
-        BigDecimal invested = BigDecimal.ZERO;
+        BigDecimal investedCost = BigDecimal.ZERO;
+        BigDecimal investedCostWithFee = BigDecimal.ZERO;
         BigDecimal unrealized = BigDecimal.ZERO;
+        BigDecimal partialRealized = BigDecimal.ZERO;
+
         for (Trade t : openTrades) {
             BigDecimal cost = t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity()));
-            invested = invested.add(cost);
-            if (t.getPnl() != null) {
-                unrealized = unrealized.add(t.getPnl());
-            }
+            BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
+            investedCost = investedCost.add(cost);
+            investedCostWithFee = investedCostWithFee.add(cost).add(fee);
+            if (t.getPnl() != null) unrealized = unrealized.add(t.getPnl());
+            if (t.getPartialRealizedPnl() != null) partialRealized = partialRealized.add(t.getPartialRealizedPnl());
         }
 
-        BigDecimal realized = allTrades.stream()
-            .filter(t -> "closed".equals(t.getStatus()) && t.getPnl() != null)
-            .map(Trade::getPnl)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<Trade> closedTrades = allTrades.stream()
+            .filter(t -> "closed".equalsIgnoreCase(t.getStatus()))
+            .toList();
 
-        BigDecimal cash = INITIAL_CAPITAL.add(realized).subtract(invested);
-        if (cash.compareTo(BigDecimal.ZERO) < 0) {
-            cash = BigDecimal.ZERO;
-        }
-        BigDecimal currentMarketValue = invested.add(unrealized);
+        BigDecimal realized = closedTrades.stream()
+            .map(t -> (t.getPnl() != null ? t.getPnl() : BigDecimal.ZERO)
+                .add(t.getPartialRealizedPnl() != null ? t.getPartialRealizedPnl() : BigDecimal.ZERO))
+            .reduce(BigDecimal.ZERO, BigDecimal::add)
+            .add(partialRealized);
+
+        BigDecimal cash = INITIAL_CAPITAL.add(realized).subtract(investedCostWithFee);
+        BigDecimal currentMarketValue = investedCost.add(unrealized);
         BigDecimal currentNav = cash.add(currentMarketValue);
+
+        long closedCount = closedTrades.size();
+        long winCount = closedTrades.stream()
+            .filter(t -> t.getPnl() != null && t.getPnl().compareTo(BigDecimal.ZERO) > 0)
+            .count();
+        BigDecimal actualWinRate = closedCount > 0
+            ? BigDecimal.valueOf(winCount * 100.0 / closedCount).setScale(2, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
 
         List<PortfolioSnapshot> snapshots = snapshotRepository.findAllByOrderBySnapshotTimeAsc();
         if (snapshots.isEmpty()) {
@@ -200,12 +194,14 @@ public class PortfolioHistoryService {
         PortfolioSnapshot latest = snapshots.get(snapshots.size() - 1);
         LocalDate today = LocalDate.now();
 
-        // Đồng bộ snapshot ngày hôm nay trong DB để đồ thị & báo cáo đa kỳ khớp 100% thời gian thực
         if (latest.getSnapshotDate().isEqual(today)) {
             latest.setTotalNav(currentNav);
             latest.setUnrealizedPnl(unrealized);
+            latest.setRealizedPnl(realized);
             latest.setInvestedValue(currentMarketValue);
             latest.setCashBalance(cash);
+            latest.setWinRate(actualWinRate);
+            latest.setTotalTrades((int) closedCount);
             latest.setOpenPositionsCount(openTrades.size());
             BigDecimal retPct = INITIAL_CAPITAL.compareTo(BigDecimal.ZERO) > 0
                 ? currentNav.subtract(INITIAL_CAPITAL).divide(INITIAL_CAPITAL, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
@@ -214,13 +210,9 @@ public class PortfolioHistoryService {
             snapshotRepository.save(latest);
         }
 
-        // 1. DoD (1 ngày trước)
         PortfolioSnapshot oneDaySnap = findClosestSnapshot(snapshots, today.minusDays(1));
-        // 2. WoW (7 ngày trước)
         PortfolioSnapshot oneWeekSnap = findClosestSnapshot(snapshots, today.minusDays(7));
-        // 3. MoM (30 ngày trước)
         PortfolioSnapshot oneMonthSnap = findClosestSnapshot(snapshots, today.minusDays(30));
-        // 4. QoQ (90 ngày trước)
         PortfolioSnapshot threeMonthsSnap = findClosestSnapshot(snapshots, today.minusDays(90));
 
         PerformanceComparisonDto.PeriodComparisonItem dod = buildPeriodComparison("1 Ngày Trước (DoD)", oneDaySnap, currentNav);
@@ -236,21 +228,44 @@ public class PortfolioHistoryService {
             ? profitVnd.divide(INITIAL_CAPITAL, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
             : BigDecimal.ZERO;
 
+        // Tính thực tế Profit Factor & Max Drawdown từ lịch sử thật
+        double grossProfit = closedTrades.stream()
+            .filter(t -> t.getPnl() != null && t.getPnl().compareTo(BigDecimal.ZERO) > 0)
+            .mapToDouble(t -> t.getPnl().doubleValue()).sum();
+        double grossLoss = Math.abs(closedTrades.stream()
+            .filter(t -> t.getPnl() != null && t.getPnl().compareTo(BigDecimal.ZERO) < 0)
+            .mapToDouble(t -> t.getPnl().doubleValue()).sum());
+        BigDecimal realProfitFactor = grossLoss > 0
+            ? BigDecimal.valueOf(grossProfit / grossLoss).setScale(2, RoundingMode.HALF_UP)
+            : (grossProfit > 0 ? BigDecimal.valueOf(9.99) : BigDecimal.ZERO);
+
+        double peakNav = INITIAL_CAPITAL.doubleValue();
+        double maxDd = 0.0;
+        for (PortfolioSnapshot s : snapshots) {
+            if (s.getTotalNav() != null) {
+                double nav = s.getTotalNav().doubleValue();
+                if (nav > peakNav) peakNav = nav;
+                if (peakNav > 0) {
+                    double dd = ((peakNav - nav) / peakNav) * 100.0;
+                    if (dd > maxDd) maxDd = dd;
+                }
+            }
+        }
+
+        String rating = closedCount < 5 ? "CHỜ KIỂM CHỨNG (< 5 LỆNH ĐÓNG)"
+            : (profitPct.doubleValue() > 0 && realProfitFactor.doubleValue() >= 1.5 ? "ĐẠT CHUẨN ĐỊNH LƯỢNG" : "ĐANG TÍCH LŨY DỮ LIỆU");
+
         String summary = String.format(
             "TỔNG KẾT HIỆU SUẤT VỐN: NAV hiện tại %,.0f đ (Lãi lũy kế %s%% so với vốn gốc %,.0f đ). " +
-            "So với 1 ngày trước: %s%s đ (%s%%) | So với 30 ngày trước: %s%s đ (%s%%). " +
-            "Tỷ lệ thắng trung bình %s%% qua %d lệnh.",
+            "So với 1 ngày trước: %s%s đ (%s%%) | Tỷ lệ thắng thực tế %s%% qua %d lệnh đóng.",
             currentNav.doubleValue(),
             profitPct.setScale(2, RoundingMode.HALF_UP),
             INITIAL_CAPITAL.doubleValue(),
             dod.getDeltaNavVnd().compareTo(BigDecimal.ZERO) >= 0 ? "+" : "",
             dod.getDeltaNavVnd().setScale(0, RoundingMode.HALF_UP).toPlainString(),
             dod.getDeltaNavPercent().setScale(2, RoundingMode.HALF_UP),
-            mom.getDeltaNavVnd().compareTo(BigDecimal.ZERO) >= 0 ? "+" : "",
-            mom.getDeltaNavVnd().setScale(0, RoundingMode.HALF_UP).toPlainString(),
-            mom.getDeltaNavPercent().setScale(2, RoundingMode.HALF_UP),
-            latest.getWinRate() != null ? latest.getWinRate() : BigDecimal.valueOf(73.5),
-            latest.getTotalTrades() != null ? latest.getTotalTrades() : 0
+            actualWinRate,
+            closedCount
         );
 
         return PerformanceComparisonDto.builder()
@@ -259,19 +274,19 @@ public class PortfolioHistoryService {
             .initialCapital(INITIAL_CAPITAL)
             .totalProfitVnd(profitVnd)
             .totalProfitPercent(profitPct)
-            .currentWinRate(latest.getWinRate() != null ? latest.getWinRate() : BigDecimal.valueOf(73.5))
-            .currentTotalTrades(latest.getTotalTrades() != null ? latest.getTotalTrades() : 0)
-            .openPositionsCount(latest.getOpenPositionsCount() != null ? latest.getOpenPositionsCount() : 0)
+            .currentWinRate(actualWinRate)
+            .currentTotalTrades((int) closedCount)
+            .openPositionsCount(openTrades.size())
             .oneDayAgo(dod)
             .oneWeekAgo(wow)
             .oneMonthAgo(mom)
             .threeMonthsAgo(qoq)
             .monthlyBreakdown(monthlyBreakdown)
             .dailyBreakdown(dailyBreakdown)
-            .sharpeRatio(BigDecimal.valueOf(2.85))
-            .maxDrawdownPercent(BigDecimal.valueOf(3.85))
-            .profitFactor(BigDecimal.valueOf(2.45))
-            .hedgeFundRating("AAA (QUỸ ĐẦU CƠ ĐẲNG CẤP THẾ GIỚI)")
+            .sharpeRatio(BigDecimal.ZERO)
+            .maxDrawdownPercent(BigDecimal.valueOf(maxDd).setScale(2, RoundingMode.HALF_UP))
+            .profitFactor(realProfitFactor)
+            .hedgeFundRating(rating)
             .executiveSummary(summary)
             .build();
     }
@@ -326,7 +341,7 @@ public class PortfolioHistoryService {
             .nav(baseline.getTotalNav())
             .deltaNavVnd(deltaVnd)
             .deltaNavPercent(deltaPct)
-            .winRate(baseline.getWinRate() != null ? baseline.getWinRate() : BigDecimal.valueOf(73.5))
+            .winRate(baseline.getWinRate() != null ? baseline.getWinRate() : BigDecimal.ZERO)
             .totalTrades(baseline.getTotalTrades() != null ? baseline.getTotalTrades() : 0)
             .performanceVerdict(verdict)
             .build();
@@ -358,7 +373,7 @@ public class PortfolioHistoryService {
                 ? netProfit.divide(startNav, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100))
                 : BigDecimal.ZERO;
 
-            int tradesInMonth = Math.max(1, (lastSnap.getTotalTrades() != null ? lastSnap.getTotalTrades() : 0) -
+            int tradesInMonth = Math.max(0, (lastSnap.getTotalTrades() != null ? lastSnap.getTotalTrades() : 0) -
                 (firstSnap.getTotalTrades() != null ? firstSnap.getTotalTrades() : 0));
 
             String badge = retPct.compareTo(BigDecimal.ZERO) > 0 ? "PROFITABLE" : (retPct.compareTo(BigDecimal.ZERO) < 0 ? "DRAWDOWN" : "FLAT");
@@ -370,7 +385,7 @@ public class PortfolioHistoryService {
                 .endNav(endNav)
                 .netProfitVnd(netProfit)
                 .returnPercent(retPct)
-                .winRate(lastSnap.getWinRate() != null ? lastSnap.getWinRate() : BigDecimal.valueOf(73.5))
+                .winRate(lastSnap.getWinRate() != null ? lastSnap.getWinRate() : BigDecimal.ZERO)
                 .tradesCount(tradesInMonth)
                 .statusBadge(badge)
                 .build());
@@ -434,7 +449,7 @@ public class PortfolioHistoryService {
                 .endNav(endNav)
                 .netProfitVnd(netProfit)
                 .returnPercent(retPct)
-                .winRate(lastSnap.getWinRate() != null ? lastSnap.getWinRate() : BigDecimal.valueOf(73.5))
+                .winRate(lastSnap.getWinRate() != null ? lastSnap.getWinRate() : BigDecimal.ZERO)
                 .tradesCount(lastSnap.getTotalTrades() != null ? lastSnap.getTotalTrades() : 0)
                 .openPositionsCount(lastSnap.getOpenPositionsCount() != null ? lastSnap.getOpenPositionsCount() : 0)
                 .statusBadge(badge)

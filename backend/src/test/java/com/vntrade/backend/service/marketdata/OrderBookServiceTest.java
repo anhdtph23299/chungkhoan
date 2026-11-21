@@ -24,7 +24,7 @@ class OrderBookServiceTest {
     }
 
     @Test
-    @DisplayName("Kiểm tra mô phỏng sổ lệnh Level-2: 3 bước giá Dư mua / Dư bán, biên độ trần sàn +-7%, bước giá đúng quy định HOSE")
+    @DisplayName("Kiểm tra biên độ trần sàn +-7%, bước giá HOSE và xử lý trung thực khi ngoài phiên không có độ sâu giả")
     void testGetOrderBook() {
         StockQuote quote = StockQuote.builder()
             .symbol("HPG")
@@ -39,24 +39,18 @@ class OrderBookServiceTest {
 
         assertNotNull(ob);
         assertEquals("HPG", ob.getSymbol());
-        assertEquals(3, ob.getBidLevels().size());
-        assertEquals(3, ob.getAskLevels().size());
+        assertNotNull(ob.getBidLevels());
+        assertNotNull(ob.getAskLevels());
+        assertNotNull(ob.getDataSource());
 
-        // Giá 29.800 thuộc vùng 10.000 - 49.950 -> bước giá 50đ
-        // Bids: 29800, 29750, 29700
-        assertEquals(0, ob.getBidLevels().get(0).getPrice().compareTo(BigDecimal.valueOf(29800)));
-        assertEquals(0, ob.getBidLevels().get(1).getPrice().compareTo(BigDecimal.valueOf(29750)));
-        assertEquals(0, ob.getBidLevels().get(2).getPrice().compareTo(BigDecimal.valueOf(29700)));
+        // Kiểm tra bước giá HOSE đúng chuẩn: <10k -> 10đ, 10k-50k -> 50đ, >=50k -> 100đ
+        assertEquals(0, orderBookService.getTickSize(BigDecimal.valueOf(9500)).compareTo(BigDecimal.valueOf(10)));
+        assertEquals(0, orderBookService.getTickSize(BigDecimal.valueOf(29800)).compareTo(BigDecimal.valueOf(50)));
+        assertEquals(0, orderBookService.getTickSize(BigDecimal.valueOf(65000)).compareTo(BigDecimal.valueOf(100)));
 
-        // Asks: 29850, 29900, 29950
-        assertEquals(0, ob.getAskLevels().get(0).getPrice().compareTo(BigDecimal.valueOf(29850)));
-        assertEquals(0, ob.getAskLevels().get(1).getPrice().compareTo(BigDecimal.valueOf(29900)));
-        assertEquals(0, ob.getAskLevels().get(2).getPrice().compareTo(BigDecimal.valueOf(29950)));
-
-        // Trần = 29500 * 1.07 = 31565
+        // Trần > Tham chiếu > Sàn
         assertTrue(ob.getCeilingPrice().compareTo(ob.getReferencePrice()) > 0);
         assertTrue(ob.getFloorPrice().compareTo(ob.getReferencePrice()) < 0);
-        assertTrue(ob.getLiquidityGrade().contains("AAA"));
-        assertTrue(ob.getEstimatedSlippagePercent().doubleValue() < 0.25);
+        assertTrue(ob.getEstimatedSlippagePercent().doubleValue() < 0.50);
     }
 }

@@ -1,17 +1,26 @@
 package com.vntrade.backend.service.futures;
 
 import com.vntrade.backend.dto.*;
+import com.vntrade.backend.entity.FuturesPosition;
+import com.vntrade.backend.repository.FuturesPositionRepository;
+import com.vntrade.backend.service.marketdata.StockPriceService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 public class VN30FuturesTradingServiceTest {
 
     private VN30FuturesCandleService candleService;
+    private StockPriceService stockPriceService;
+    private FuturesPositionRepository futuresPositionRepository;
     private VN30FuturesStrategyEngine strategyEngine;
     private VN30FuturesTradingService tradingService;
     private VN30FuturesBacktestService backtestService;
@@ -19,8 +28,15 @@ public class VN30FuturesTradingServiceTest {
     @BeforeEach
     void setUp() {
         candleService = new VN30FuturesCandleService();
-        strategyEngine = new VN30FuturesStrategyEngine(candleService);
-        tradingService = new VN30FuturesTradingService(strategyEngine);
+        stockPriceService = Mockito.mock(StockPriceService.class);
+        futuresPositionRepository = Mockito.mock(FuturesPositionRepository.class);
+        when(stockPriceService.getQuote(anyString())).thenReturn(
+            StockQuote.builder().symbol("VN30").price(BigDecimal.valueOf(1870.0)).build()
+        );
+        when(futuresPositionRepository.findByStatus(anyString())).thenReturn(List.of());
+        when(futuresPositionRepository.save(any(FuturesPosition.class))).thenAnswer(inv -> inv.getArgument(0));
+        strategyEngine = new VN30FuturesStrategyEngine(candleService, stockPriceService);
+        tradingService = new VN30FuturesTradingService(strategyEngine, futuresPositionRepository);
         backtestService = new VN30FuturesBacktestService(candleService);
     }
 

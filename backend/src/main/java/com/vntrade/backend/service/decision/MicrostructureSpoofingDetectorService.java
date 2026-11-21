@@ -22,11 +22,31 @@ public class MicrostructureSpoofingDetectorService {
     private final OrderBookService orderBookService;
 
     /**
-     * Phân tích cấu trúc vi mô sổ lệnh và nhận diện hành vi kê lệnh ảo (Spoofing / Phantom Wall)
+     * Phân tích cấu trúc vi mô sổ lệnh thật và nhận diện hành vi kê lệnh ảo (Spoofing / Phantom Wall) hoặc vẽ nến kéo rướn (VWAP Divergence)
      */
     public SpoofingDetectorDto detectSpoofing(String symbol) {
         String sym = symbol != null ? symbol.toUpperCase().trim() : "FPT";
         OrderBookDto ob = orderBookService.getOrderBook(sym);
+
+        boolean emptyDepth = (ob.getBidLevels() == null || ob.getBidLevels().isEmpty())
+            && (ob.getAskLevels() == null || ob.getAskLevels().isEmpty());
+        if (!ob.isRealOrderBookAvailable() && emptyDepth) {
+            return SpoofingDetectorDto.builder()
+                .symbol(sym)
+                .currentPrice(ob.getCurrentPrice())
+                .spoofingRiskScore(0)
+                .layeringPattern("PRE_MARKET_OR_NO_DEPTH")
+                .isSafeToBuy(true)
+                .level3ToTotalRatio(BigDecimal.ZERO)
+                .suspectedPhantomVolume(0L)
+                .suspectedPhantomPrice(BigDecimal.ZERO)
+                .cancelHazardProbability(BigDecimal.ZERO)
+                .microPriceDislocationPercent(BigDecimal.ZERO)
+                .bidLevels(List.of())
+                .askLevels(List.of())
+                .institutionalActionVerdict("Chưa có dữ liệu sổ lệnh Level-2 trực tiếp (" + ob.getDataSource() + "). Tạm bỏ qua kiểm tra Spoofing.")
+                .build();
+        }
 
         List<OrderBookLevel> bids = ob.getBidLevels() != null ? ob.getBidLevels() : List.of();
         List<OrderBookLevel> asks = ob.getAskLevels() != null ? ob.getAskLevels() : List.of();
@@ -84,8 +104,8 @@ public class MicrostructureSpoofingDetectorService {
         double cancelHazard = 10.0;
         double level3MaxRatio = Math.max(bidL3Ratio, askL3Ratio) * 100.0;
 
-        // Phát hiện Bẫy Kê Mua Ảo Tầng 3 (Phantom Bid Support Wall)
-        if (bidL3Ratio >= 0.55 && bidL1Ratio <= 0.20) {
+        // Phát hiện Bẫy Kê Mua Ảo Tầng 3 (Phantom Bid Support Wall) - Yêu cầu độ sâu đủ lớn (>= 50k CP) tránh nhiễu
+        if (bids.size() >= 3 && totalBidVol >= 50_000 && bidL3Ratio >= 0.55 && bidL1Ratio <= 0.20) {
             pattern = "PHANTOM_BID_SUPPORT_LAYER";
             riskScore = (int) Math.min(95, 60 + (bidL3Ratio - 0.55) * 80);
             isSafeToBuy = false; // Nguy hiểm: Không mua đuổi theo lệnh MP vì bức tường đỡ là ảo
@@ -93,8 +113,19 @@ public class MicrostructureSpoofingDetectorService {
             suspectedVolume = bids.get(2).getVolume();
             cancelHazard = Math.min(92.0, 70.0 + (bidL3Ratio - 0.55) * 60);
         }
+        // Phát hiện Bẫy Vẽ Nến Kéo Rướn (Candle Painting / VWAP Divergence > +2.2% so với bình quân phiên)
+        else if (ob.getAveragePrice() != null && ob.getAveragePrice().compareTo(BigDecimal.ZERO) > 0
+                && ob.getCurrentPrice() != null
+                && ob.getCurrentPrice().doubleValue() > ob.getAveragePrice().doubleValue() * 1.022) {
+            pattern = "VWAP_CANDLE_PAINTING_TRAP";
+            riskScore = 72;
+            isSafeToBuy = false; // Cảnh báo: Giá khớp đang kéo rướn vượt xa giá bình quân gia quyền phiên
+            suspectedPrice = ob.getCurrentPrice();
+            suspectedVolume = ob.getTotalMatchedVolume();
+            cancelHazard = 75.0;
+        }
         // Phát hiện Bẫy Đè Bán Ảo Tầng 3 (Phantom Ask Resistance Layer)
-        else if (askL3Ratio >= 0.55 && askL1Ratio <= 0.20) {
+        else if (asks.size() >= 3 && totalAskVol >= 50_000 && askL3Ratio >= 0.55 && askL1Ratio <= 0.20) {
             pattern = "PHANTOM_ASK_RESISTANCE_LAYER";
             riskScore = (int) Math.min(85, 50 + (askL3Ratio - 0.55) * 70);
             isSafeToBuy = true; // An toàn: Big boy đè bán ảo để gom hàng giá thấp
@@ -110,6 +141,9 @@ public class MicrostructureSpoofingDetectorService {
         if ("PHANTOM_BID_SUPPORT_LAYER".equals(pattern)) {
             verdict = String.format("CẢNH BÁO BẪY KÊ MUA ẢO (Bull Trap): Khối lượng tầng 3 chiếm %.1f%% tổng dư mua (%d CP tại giá %.0f đ) trong khi tầng 1 rất mỏng (%.1f%%). Xác suất hủy lệnh trước khớp: %.0f%%. Bot TỪ CHỐI mua lệnh MP, đề phòng cá mập rút lệnh kê xả hàng.",
                     bidL3Ratio * 100.0, suspectedVolume, suspectedPrice.doubleValue(), bidL1Ratio * 100.0, cancelHazard);
+        } else if ("VWAP_CANDLE_PAINTING_TRAP".equals(pattern)) {
+            verdict = String.format("CẢNH BÁO VẼ NẾN KÉO RƯỚN (VWAP Trap): Giá khớp %,.0f đ cao hơn +2.2%% so với giá bình quân cả phiên VWAP (%,.0f đ). Nghi vấn cá mập kéo giá giả tạo Bull-trap cuối phiên!",
+                    ob.getCurrentPrice().doubleValue(), ob.getAveragePrice().doubleValue());
         } else if ("PHANTOM_ASK_RESISTANCE_LAYER".equals(pattern)) {
             verdict = String.format("PHÁT HIỆN ĐÈ BÁN ẢO ĐỂ GOM (Bear Trap): Khối lượng tầng bán 3 chiếm %.1f%% (%d CP tại giá %.0f đ) tạo tâm lý đè giá giả. Bot ưu tiên đặt lệnh Mua giới hạn (Limit) gom trước khi tường bán biến mất.",
                     askL3Ratio * 100.0, suspectedVolume, suspectedPrice.doubleValue());

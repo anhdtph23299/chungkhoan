@@ -154,9 +154,12 @@ public class BotController {
 
     @PostMapping("/reset-all")
     public ResponseEntity<Map<String, Object>> resetAll(
-            @RequestParam(required = false, defaultValue = "100000000") BigDecimal capital) {
+            @RequestParam(required = false, defaultValue = "100000000") BigDecimal capital,
+            @RequestParam(required = false, defaultValue = "true") boolean includeValidator) {
         botService.resetAllAndStartFresh(capital);
-        validatorService.resetAll();
+        if (includeValidator) {
+            validatorService.resetAll();
+        }
         auditService.clearAllAudits();
         try {
             futuresTradingService.resetAll();
@@ -171,7 +174,8 @@ public class BotController {
             "currentNav", botService.getCurrentNav(),
             "todayRealizedPnl", botService.getTodayRealizedPnl(),
             "todayTradesCount", botService.getTodayTradesCount(),
-            "message", "Đã xóa toàn bộ dữ liệu giao dịch cũ. Khởi tạo vốn mới: 100,000,000 đ (100% Tiền mặt). Sẵn sàng bắt đầu chu kỳ mới từ đầu tuần tới!"
+            "validatorReset", includeValidator,
+            "message", "Đã tất toán danh mục cũ & khởi tạo lại vốn sạch: 100,000,000 đ (100% Tiền mặt). Sẵn sàng bắt đầu chu kỳ giao dịch chuẩn chỉ!"
         ));
     }
 

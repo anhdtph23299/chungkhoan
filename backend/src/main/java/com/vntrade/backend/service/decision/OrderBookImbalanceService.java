@@ -23,6 +23,30 @@ public class OrderBookImbalanceService {
         String sym = symbol != null ? symbol.toUpperCase().trim() : "FPT";
         OrderBookDto ob = orderBookService.getOrderBook(sym);
 
+        boolean emptyDepth = (ob.getBidLevels() == null || ob.getBidLevels().isEmpty())
+            && (ob.getAskLevels() == null || ob.getAskLevels().isEmpty());
+        if (!ob.isRealOrderBookAvailable() && emptyDepth) {
+            BigDecimal cp = ob.getCurrentPrice() != null ? ob.getCurrentPrice() : BigDecimal.ZERO;
+            return OrderBookImbalanceDto.builder()
+                .symbol(sym)
+                .currentPrice(cp)
+                .midPrice(cp)
+                .microPrice(cp)
+                .microPricePremiumPercent(BigDecimal.ZERO)
+                .totalBidVolume(0L)
+                .totalAskVolume(0L)
+                .orderBookImbalanceRatio(BigDecimal.ZERO)
+                .wallDetected("NONE")
+                .wallPrice(BigDecimal.ZERO)
+                .wallVolume(0L)
+                .wallProportionPercent(BigDecimal.ZERO)
+                .optimalExecutionStrategy("PASSIVE_LIMIT_POST_ONLY")
+                .estimatedSlippageBps(BigDecimal.ZERO)
+                .microstructureSignal("BALANCED")
+                .institutionalVerdict(String.format("CHỜ ĐỘ SÂU SỔ LỆNH THẬT (%s): Ngoài giờ khớp lệnh liên tục hoặc nguồn cấp Level-2 tạm trống.", ob.getDataSource()))
+                .build();
+        }
+
         List<OrderBookLevel> bids = ob.getBidLevels();
         List<OrderBookLevel> asks = ob.getAskLevels();
 
