@@ -122,7 +122,7 @@ public class BotDecisionAuditService {
                 } else {
                     audit.setAuditVerdict("NEUTRAL_REJECTION");
                 }
-            } else if ("BUY_EXECUTED".equalsIgnoreCase(audit.getDecision())) {
+            } else if (audit.getDecision() != null && audit.getDecision().toUpperCase().startsWith("BUY")) {
                 if (ret5.compareTo(BigDecimal.ZERO) > 0) {
                     audit.setAuditVerdict("PROFITABLE_ENTRY");
                 } else {

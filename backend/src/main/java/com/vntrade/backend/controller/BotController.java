@@ -27,6 +27,22 @@ public class BotController {
     private final com.vntrade.backend.service.execution.SignalValidatorService validatorService;
     private final com.vntrade.backend.service.portfolio.PortfolioHistoryService portfolioHistoryService;
     private final com.vntrade.backend.service.futures.VN30FuturesTradingService futuresTradingService;
+    private final com.vntrade.backend.service.execution.IntradayTraceLoggerService traceLoggerService;
+
+    @GetMapping("/trace-logs")
+    public ResponseEntity<List<Map<String, Object>>> getTraceLogs(
+            @RequestParam(required = false) String date,
+            @RequestParam(required = false, defaultValue = "100") int limit) {
+        java.time.LocalDate targetDate = (date != null && !date.isBlank())
+            ? java.time.LocalDate.parse(date)
+            : java.time.LocalDate.now();
+        return ResponseEntity.ok(traceLoggerService.readRecentTraces(targetDate, limit));
+    }
+
+    @GetMapping("/trace-stats")
+    public ResponseEntity<Map<String, Object>> getTraceStats() {
+        return ResponseEntity.ok(traceLoggerService.getTraceStorageStats());
+    }
 
     @GetMapping("/audit-summary")
     public ResponseEntity<Map<String, Object>> getAuditSummary() {

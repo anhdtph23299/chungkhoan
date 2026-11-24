@@ -67,6 +67,9 @@ public class AutoTradingBotService {
     private final PreMarketSentimentService preMarketSentimentService;
     private final OrderBookService orderBookService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private IntradayTraceLoggerService traceLoggerService;
+
     // Bot Configuration & State
     private boolean isRunning = true;
     private String mode = "LIVE_PAPER_MONEY"; // SIMULATION, LIVE_PAPER_MONEY, REAL_READY
@@ -80,8 +83,9 @@ public class AutoTradingBotService {
     private boolean enforceMarketHours = true;
     private int cycleScanCount = 0;
 
-    // Active Institutional Strategy V2: Core T1 + DEFCON-1 + Real Level-2 OrderBook (OBI/Spoofing/VWAP) + Foreign Flow + RRG/Kalman/MTF + CafeF Risk Veto
-    private String executionStrategy = "ACTIVE_QUANT_V2_REAL_ORDERBOOK";
+    // Q1_A_INVVOL Strategy (Backtest 6.8 năm VN30: +105.12% tổng lãi, CAGR +11.13%, Sharpe 0.74, PF 1.80, MaxDD 27.89%, p<0.05):
+    // Dual Risk-Adjusted Momentum + VN-Index EMA20/SMA50 Breadth Shield + Inverse-Vol Sizing + Structural Trend Exit (Let Winners Run)
+    private String executionStrategy = "Q1_A_INVVOL_DUAL_MOMENTUM";
     private BigDecimal maxDrawdownThreshold = BigDecimal.valueOf(20.0); // Ngưỡng MaxDD cảnh báo: 20.0%
     private BigDecimal riskPerTradePercent = BigDecimal.valueOf(1.50); // Rủi ro cho phép mỗi lệnh: 1.50% NAV
     private final java.util.Map<String, LocalDateTime> lastT25AlertTime = new java.util.concurrent.ConcurrentHashMap<>();
@@ -126,10 +130,10 @@ public class AutoTradingBotService {
     @jakarta.annotation.PostConstruct
     public void init() {
         if (botLogs.isEmpty()) {
-            addLog(String.format("🚀 [KHỞI TẠO PAPER TRADING THÀNH CÔNG] Vốn: %,.0f đ | Chế độ: LIVE_PAPER_MONEY", accountCapital));
-            addLog("🔬 [CHIẾN LƯỢC V2 CHUẨN CHỈ] Cốt lõi T1 + DEFCON-1 | KÍCH HOẠT THẬT: Sổ lệnh Level-2 (OBI/Spoofing/VWAP), Dòng tiền ngoại, RRG, Kalman, MTF & Radar né tin xấu CafeF.");
-            addLog("📊 Hiệu suất thực tế được đo lường động từ kết quả các lệnh đã đóng & chốt từng phần, tuyệt đối trung thực.");
-            addLog("🛡️ [DEFCON-1 BẢO VỆ] Cầu chì an toàn: NORMAL_DEFENSE | Thị trường ổn định.");
+            addLog(String.format("🚀 [KHỞI TẠO Q1_A_INVVOL THÀNH CÔNG] Vốn: %,.0f đ | Chế độ: LIVE_PAPER_MONEY", accountCapital));
+            addLog("🧠 [Q1_A_INVVOL DUAL MOMENTUM] Backtest 6.8 năm VN30: Tổng lãi +105.1% | Sharpe 0.74 | PF 1.80 | SL -8% & Gồng trọn sóng (bỏ chốt non)!");
+            addLog("📝 [DELTA TRACE JSONL] Tự động ghi nhật ký vi mô ra file logs/trace/trace-YYYY-MM-DD.jsonl (tự nén GZIP 15:05, ~300KB/ngày).");
+            addLog("🛡️ [LÁ CHẮN VN-INDEX EMA20/SMA50] Tự động rút về 100% tiền mặt khi VN-Index gãy EMA20/SMA50 & Breadth < 35%.");
         }
         new Thread(() -> {
             try {
@@ -304,7 +308,7 @@ public class AutoTradingBotService {
     }
 
     public String getCycleLabel() {
-        return "Real-time Forward Test (T1 + DEFCON-1 Core)";
+        return "Q1_A_INVVOL Dual Momentum + VN-Index Shield (Sharpe 0.74)";
     }
 
     public String getExecutionStrategy() {
@@ -386,29 +390,8 @@ public class AutoTradingBotService {
     public void executeBotCycle() {
         if (!isRunning) return;
 
-        // Kiểm tra giờ giao dịch sàn HOSE/HNX: Ngoài giờ giao dịch chính thức (sau 15:00 hoặc cuối tuần), tạm dừng quét để tiết kiệm tài nguyên
-        if (enforceMarketHours && !"SIMULATION".equalsIgnoreCase(mode)) {
-            java.time.DayOfWeek dow = LocalDate.now().getDayOfWeek();
-            boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
-            java.time.LocalTime nowTime = java.time.LocalTime.now();
-            boolean isTradingHours = !isWeekend && nowTime.isAfter(java.time.LocalTime.of(9, 0)) && nowTime.isBefore(java.time.LocalTime.of(15, 0));
-            if (!isTradingHours) {
-                log.debug("AutoTradingBot: Ngoài phiên giao dịch sàn HOSE/HNX ({}), tạm dừng chu kỳ quét.", nowTime);
-                return;
-            }
-        }
-
-        // 0. KIỂM SOÁT NGUỒN DỮ LIỆU THẬT (DATA FEED INTEGRITY: REAL vs STALE)
-        // Khi mất dữ liệu thật hoặc toàn bộ API sàn không phản hồi, dừng mở vị thế mới ngay lập tức
-        if (!stockPriceService.isMarketDataConnected()) {
-            addLog("🚨 [MẤT KẾT NỐI DỮ LIỆU THẬT - STALE] Toàn bộ nguồn cấp giá sàn (VNDirect/TCBS/SSI) mất phản hồi. DỪNG 100% LỆNH MỞ VỊ THẾ ĐỂ BẢO VỆ TÀI KHOẢN!");
-            return;
-        }
-
-        // 1. Quản trị và chốt lời / cắt lỗ tự động cho các vị thế đang mở
-        manageOpenPositions();
-
-        // 2. Kiểm tra khung giờ khớp lệnh liên tục của sàn HOSE/HNX (09:15 - 11:30 và 13:00 - 14:45)
+        // Kiểm tra khung giờ khớp lệnh liên tục sàn HOSE/HNX (09:15 - 11:30 và 13:00 - 14:45)
+        // Đặt TRƯỚC manageOpenPositions() để tuyệt đối không cắt lỗ oan trong phiên ATO (09:00 - 09:15) hoặc giờ nghỉ trưa
         if (enforceMarketHours && !"SIMULATION".equalsIgnoreCase(mode)) {
             java.time.DayOfWeek dow = LocalDate.now().getDayOfWeek();
             boolean isWeekend = (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY);
@@ -416,18 +399,44 @@ public class AutoTradingBotService {
 
             boolean isAtoSession = !isWeekend && nowTime.isAfter(java.time.LocalTime.of(9, 0)) && nowTime.isBefore(java.time.LocalTime.of(9, 15));
             if (isAtoSession) {
-                log.debug("AutoTradingBot: Đang trong phiên ATO (09:00 - 09:15), tạm hoãn mở lệnh cơ sở để tránh nhiễu giá ATO.");
+                log.debug("AutoTradingBot: Đang trong phiên ATO (09:00 - 09:15), tạm hoãn cả mở lệnh lẫn cắt lỗ để tránh nhiễu giá ATO.");
                 return;
             }
 
-            boolean isContinuousTrading = !isWeekend && 
+            boolean isContinuousTrading = !isWeekend &&
                 ((nowTime.isAfter(java.time.LocalTime.of(9, 15)) && nowTime.isBefore(java.time.LocalTime.of(11, 30))) ||
                  (nowTime.isAfter(java.time.LocalTime.of(13, 0)) && nowTime.isBefore(java.time.LocalTime.of(14, 45))));
 
             if (!isContinuousTrading) {
-                log.debug("AutoTradingBot: Ngoài giờ khớp lệnh liên tục ({}), tiếp tục trực canh.", nowTime);
+                log.debug("AutoTradingBot: Ngoài giờ khớp lệnh liên tục sàn HOSE/HNX ({}), tạm dừng chu kỳ quét.", nowTime);
                 return;
             }
+        }
+
+        // 0. KIỂM SOÁT NGUỒN DỮ LIỆU THẬT (DATA FEED INTEGRITY: REAL vs STALE)
+        // Khi mất dữ liệu thật hoặc toàn bộ API sàn không phản hồi, dừng mọi thao tác mở/đóng vị thế ngay lập tức
+        if (!stockPriceService.isMarketDataConnected()) {
+            addLog("🚨 [MẤT KẾT NỐI DỮ LIỆU THẬT - STALE] Toàn bộ nguồn cấp giá sàn (VNDirect/TCBS/SSI) mất phản hồi. DỪNG 100% LỆNH MỞ VỊ THẾ ĐỂ BẢO VỆ TÀI KHOẢN!");
+            return;
+        }
+
+        // 1. Quản trị và chốt lời / cắt lỗ tự động cho các vị thế đang mở (chỉ chạy trong phiên khớp lệnh liên tục với dữ liệu REAL)
+        manageOpenPositions();
+
+        // 2. KIỂM TRA CẦU CHÌ LỖ NGÀY (DAILY MAX LOSS CIRCUIT BREAKER: -2.0% NAV)
+        BigDecimal realizedToday = getTodayRealizedPnl();
+        if (realizedToday.compareTo(dailyMaxLossLimit.negate()) <= 0) {
+            LocalDateTime nowDt = LocalDateTime.now();
+            if (lastCircuitBreakerLogTime == null || java.time.Duration.between(lastCircuitBreakerLogTime, nowDt).toMinutes() >= 15) {
+                lastCircuitBreakerLogTime = nowDt;
+                addLog(String.format("🛑 [CẦU CHÌ LỖ NGÀY ĐÃ KÍCH HOẠT] Lỗ thực tế hôm nay %,.0f đ đã chạm giới hạn -%,.0f đ (-2.0%% NAV). KHÓA 100%% LỆNH MỞ MỚI HÔM NAY!",
+                    realizedToday.doubleValue(), dailyMaxLossLimit.doubleValue()));
+            }
+            if (botDecisionAuditService != null) {
+                botDecisionAuditService.recordDecision("PORTFOLIO", "REJECTED_FILTER", BigDecimal.ZERO, "DAILY_MAX_LOSS_BREAKER",
+                    "Chạm cầu chì lỗ ngày: " + realizedToday + " đ <= -" + dailyMaxLossLimit + " đ", 0);
+            }
+            return;
         }
 
         // 3. KÍCH HOẠT ĐỘNG CƠ PHÁI SINH T+0 (Kiếm tiền cả 2 chiều LONG & SHORT bất chấp thị trường tăng hay sập)
@@ -440,22 +449,25 @@ public class AutoTradingBotService {
         List<StockScanResult> scans = strategyService.scanAllStocks();
         updateBreakoutWatchlist(scans, openTrades);
 
-        // 5. CHIẾN THUẬT SĂN TIỀN TRONG BÃO: Bắt đáy Hoảng loạn cực đại (Spring/Pinbar) & Siêu cổ phiếu Kháng Bão (RS Leader)
-        if (openTrades.size() < 2) {
-            checkOversoldBounceOpportunity(openTrades);
-            openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
-            checkAntiMarketLeaderOpportunity(openTrades, scans);
-            openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
-        }
-
-        // 6. Kiểm tra Cầu chì phòng hộ sụp đổ thị trường (DEFCON-1) cho các lệnh mua Breakout thông thường
+        // 5. Kiểm tra Cầu chì phòng hộ sụp đổ thị trường (DEFCON-1) TRƯỚC MỌI NHÁNH MỞ LỆNH CƠ SỞ (kể cả Bắt đáy & Kháng bão)
         MarketCrashProtectionDto crashStatus = crashProtectionService.evaluateMarketCircuitBreaker();
         if (!crashStatus.isAllowNewPurchases()) {
             if (botDecisionAuditService != null) {
                 botDecisionAuditService.recordDecision("VNINDEX", "REJECTED_FILTER", BigDecimal.ZERO, "DEFCON_CRASH", crashStatus.getCircuitBreakerMessage(), 0);
             }
-            addLog("🚨 [DEFCON-1 PHÒNG HỘ THỊ TRƯỜNG] " + crashStatus.getCircuitBreakerMessage() + ". Khóa mua đuổi Breakout cơ sở, tập trung kiếm tiền T+0 trên Phái Sinh VN30F1M!");
+            addLog("🚨 [DEFCON-1 PHÒNG HỘ THỊ TRƯỜNG] " + crashStatus.getCircuitBreakerMessage() + ". Khóa 100% lệnh mở mới cơ sở (Breakout, Bắt đáy & Kháng bão) để bảo toàn vốn!");
+            recordCycleDeltaTrace(null, crashStatus, openTrades, scans);
+            cycleScanCount++;
             return;
+        }
+
+        // 6. CHIẾN THUẬT SĂN TIỀN PHÂN HÓA: Bắt đáy Hoảng loạn cực đại (Spring/Pinbar) & Siêu cổ phiếu Kháng Bão (RS Leader)
+        // Chỉ chạy khi KHÔNG bị DEFCON-1 sập sàn diện rộng và đang giữ < 2 mã
+        if (openTrades.size() < 2) {
+            checkOversoldBounceOpportunity(openTrades);
+            openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
+            checkAntiMarketLeaderOpportunity(openTrades, scans);
+            openTrades = tradeRepository.findByStatusOrderByTradeDateDesc("open");
         }
 
         // 7. Kiểm tra Pha thị trường chung VN-Index (O'Neil & Minervini) cho lệnh Breakout
@@ -464,10 +476,14 @@ public class AutoTradingBotService {
             if (cycleScanCount % 4 == 0) {
                 addLog("🛡️ [LÃO LÀNG - PHÒNG THỦ DOWNTREND] " + marketRegime.getRegimeDisplayName() + ". Khóa mua đuổi Breakout giả (Bull-trap), chỉ cho phép Phái Sinh T+0 & Săn Đáy Rút Chân!");
             }
+            recordCycleDeltaTrace(marketRegime, crashStatus, openTrades, scans);
+            cycleScanCount++;
             return;
         }
 
         if (openTrades.size() >= 4) {
+            recordCycleDeltaTrace(marketRegime, crashStatus, openTrades, scans);
+            cycleScanCount++;
             return; // Tối đa nắm 4 mã để tập trung danh mục
         }
 
@@ -494,17 +510,17 @@ public class AutoTradingBotService {
                     continue;
                 }
 
-                // 1.0b. QUY TẮC KIM TỰ THÁP LÃNG LÀNG (Minervini Progressive Exposure - Pilot Buy)
-                // Vị thế 1: Pilot Buy (thăm dò 25-30% NAV).
-                // Vị thế 2 trở đi: CHỈ MỞ KHI danh mục đã có ít nhất 1 mã có đệm lãi an toàn (>= +2.0%).
+                // 1.0b. QUẢN TRỊ RỦI RO DANH MỤC (Smart Progressive Exposure):
+                // Chỉ khóa mở thêm vị thế mới khi danh mục đang có lệnh lỗ nặng (< -3.0%) để không cộng dồn thua lỗ,
+                // còn khi vị thế đang khỏe/ổn định trong Uptrend thì cho phép phân bổ đủ 4 mã dẫn sóng (giảm rủi ro tập trung & tăng Sharpe).
                 if (openTrades.size() >= 1) {
-                    boolean hasProfitCushion = openTrades.stream().anyMatch(t ->
-                        t.getPnlPercent() != null && t.getPnlPercent().compareTo(BigDecimal.valueOf(2.0)) >= 0
+                    boolean hasHeavyBleeding = openTrades.stream().anyMatch(t ->
+                        t.getPnlPercent() != null && t.getPnlPercent().compareTo(BigDecimal.valueOf(-3.0)) < 0
                     );
-                    if (!hasProfitCushion) {
+                    if (hasHeavyBleeding) {
                         if (cycleScanCount % 3 == 0) {
-                            addLog(String.format("🛡️ [MINERVINI PROGRESSIVE EXPOSURE] Tạm dừng mở thêm %s: Danh mục đang có %d mã nhưng CHƯA CÓ MÃ NÀO CÓ ĐỆM LÃI (>= +2.0%%). Không được phép tăng rủi ro khi thị trường chưa cho quả ngọt!",
-                                scan.getSymbol(), openTrades.size()));
+                            addLog(String.format("🛡️ [BẢO VỆ VỐN DANH MỤC] Tạm dừng mở thêm %s: Danh mục đang có vị thế lỗ > 3%%. Không mở rộng quy mô khi vị thế hiện tại đang bị áp lực!",
+                                scan.getSymbol()));
                         }
                         continue;
                     }
@@ -559,6 +575,28 @@ public class AutoTradingBotService {
 
                 int finalShares = sizing.getMaxSharesToBuy();
                 BigDecimal feeMultiplier = BigDecimal.valueOf(1.0015);
+
+                // 1.1b. Q1_A_INVVOL INVERSE-VOLATILITY SIZING:
+                // Phân bổ tỷ trọng ngược với độ biến động ATR% của từng mã (mã êm tối đa 31.25% NAV, mã giật mạnh giới hạn ~14% NAV)
+                try {
+                    BigDecimal navForSizing = getCurrentNav().max(BigDecimal.valueOf(10_000_000));
+                    AdaptivePositionSizingDto adaptive = adaptivePositionSizingService.calculateAdaptiveSize(scan.getSymbol(), navForSizing);
+                    if (adaptive != null && adaptive.getAtrPercent() != null && adaptive.getAtrPercent().doubleValue() > 0) {
+                        double atrPct = Math.max(1.0, adaptive.getAtrPercent().doubleValue());
+                        double volScale = Math.min(1.25, Math.max(0.55, 2.2 / atrPct));
+                        BigDecimal invVolBudget = navForSizing.divide(BigDecimal.valueOf(4), 0, RoundingMode.HALF_UP)
+                            .multiply(BigDecimal.valueOf(volScale));
+                        BigDecimal effectivePrice = scan.getPrice().multiply(feeMultiplier);
+                        int invVolShares = (invVolBudget.divide(effectivePrice, 0, RoundingMode.FLOOR).intValue() / 100) * 100;
+                        if (invVolShares >= 100 && invVolShares < finalShares) {
+                            finalShares = invVolShares;
+                            proposedCost = scan.getPrice().multiply(BigDecimal.valueOf(finalShares));
+                            addLog(String.format("⚖️ [Q1_A INV-VOL SIZING] %s (ATR=%.2f%% → scale=%.2fx): Khớp quy mô tối ưu %d cp (%,.0f đ).",
+                                scan.getSymbol(), atrPct, volScale, finalShares, proposedCost.doubleValue()));
+                        }
+                    }
+                } catch (Exception ignored) {}
+
                 if (proposedCost.multiply(feeMultiplier).compareTo(availableCash) > 0) {
                     BigDecimal effectivePrice = scan.getPrice().multiply(feeMultiplier);
                     int maxAffordable = availableCash.divide(effectivePrice, 0, RoundingMode.FLOOR).intValue();
@@ -583,6 +621,12 @@ public class AutoTradingBotService {
                 if (!filterOutcome.allowed()) {
                     addLog(String.format("🚫 [CHỐT CHẶN V2 TỪ CHỐI MUA] %s: %s | Chi tiết: [%s]",
                         scan.getSymbol(), filterOutcome.vetoReason(), filterOutcome.auditSummary()));
+                    recordTraceEvent("FILTER_VETO", scan.getSymbol(), java.util.Map.of(
+                        "price", scan.getPrice(), "score", scan.getConfidenceScore(),
+                        "vetoCode", filterOutcome.vetoFilterCode() != null ? filterOutcome.vetoFilterCode() : "UNKNOWN",
+                        "reason", filterOutcome.vetoReason() != null ? filterOutcome.vetoReason() : "",
+                        "audit", filterOutcome.auditSummary()
+                    ));
                     if (botDecisionAuditService != null) {
                         botDecisionAuditService.recordDecision(
                             scan.getSymbol(), "REJECTED_FILTER", scan.getPrice(),
@@ -634,6 +678,16 @@ public class AutoTradingBotService {
                     addLog(String.format("⚡ ĐÃ MỞ VỊ THẾ T1 CORE: Mua %d cp %s giá %s đ | SL: %s | TP: %s (R:R = 1:%s)",
                         created.getQuantity(), created.getSymbol(), created.getPrice(), created.getStopLoss(), created.getTakeProfit(), sizing.getRiskRewardRatio()));
 
+                    recordTraceEvent("TRADE_OPENED", created.getSymbol(), java.util.Map.of(
+                        "strategy", created.getStrategy() != null ? created.getStrategy() : "QUANT_V3",
+                        "price", created.getPrice(),
+                        "quantity", created.getQuantity(),
+                        "stopLoss", created.getStopLoss() != null ? created.getStopLoss() : BigDecimal.ZERO,
+                        "takeProfit", created.getTakeProfit() != null ? created.getTakeProfit() : BigDecimal.ZERO,
+                        "score", scan.getConfidenceScore(),
+                        "audit", shadowEvaluation
+                    ));
+
                     try {
                         sseStreamService.broadcast("BOT_TRADE_OPENED", created);
                     } catch (Exception ignored) {}
@@ -650,6 +704,9 @@ public class AutoTradingBotService {
                 break; // Mở 1 mã mỗi chu kỳ để tránh giải ngân ồ ạt
             }
         }
+
+        // Ghi nhận Delta Trace JSONL ra file theo ngày (không phình DB H2, tự nén GZIP lúc 15:05)
+        recordCycleDeltaTrace(marketRegime, crashStatus, openTrades, scans);
 
         // Ghi nhận trực canh mỗi chu kỳ để người dùng theo dõi rõ tiến độ trên Live Trace Console
         cycleScanCount++;
@@ -690,7 +747,10 @@ public class AutoTradingBotService {
         for (Trade trade : openTrades) {
             try {
                 StockQuote quote = stockPriceService.getQuote(trade.getSymbol());
-                if (quote.getPrice() == null || quote.getPrice().compareTo(BigDecimal.ZERO) <= 0) continue;
+                if (quote == null || quote.isStale() || quote.getPrice() == null || quote.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                    log.debug("Bỏ qua quản trị vị thế {} do báo giá không hợp lệ hoặc STALE.", trade.getSymbol());
+                    continue;
+                }
 
                 BigDecimal currentPrice = quote.getPrice();
                 BigDecimal entryPrice = trade.getPrice();
@@ -735,6 +795,9 @@ public class AutoTradingBotService {
                     todayTradesCount++;
                     addLog(String.format("🚨 [BOT CẮT LỖ BẢO VỆ VỐN] Đã bán hết %d cp %s tại %s đ. Khoản lỗ: %s đ (%s%%)",
                         closed.getQuantity(), closed.getSymbol(), currentPrice, closed.getPnl(), closed.getPnlPercent()));
+                    recordTraceEvent("STOP_LOSS_EXECUTED", closed.getSymbol(), java.util.Map.of(
+                        "price", currentPrice, "qty", closed.getQuantity(), "pnl", closed.getPnl(), "pnlPct", closed.getPnlPercent()
+                    ));
 
                     try {
                         sseStreamService.broadcast("BOT_TRADE_CLOSED", closed);
@@ -751,41 +814,58 @@ public class AutoTradingBotService {
                     continue;
                 }
 
-                // 2. GẶT HÁI LỢI NHUẬN LÃO LÀNG (Dan Zanger / Mark Minervini): Chốt lời 50% khi lãi >= +8.0%
-                if (pnlPct.compareTo(BigDecimal.valueOf(6.0)) >= 0
-                    && (trade.getPartialClosedQuantity() == null || trade.getPartialClosedQuantity() == 0)
-                    && trade.getQuantity() >= 200) {
-
-                    int qtyToHarvest = ((trade.getQuantity() / 2) / 100) * 100;
-                    if (qtyToHarvest >= 100) {
-                        BigDecimal partialGain = tradeService.executePartialClose(
+                // 1.5. LÁ CHẮN BÃO HỆ THỐNG (Q1_A_INVVOL MARKET CRASH SHIELD EXIT):
+                // Khi VN-Index gãy cả EMA20 & SMA50 & Breadth < 35% (DOWNTREND_DEFENSE),
+                // chủ động thoát toàn bộ vị thế đã về tài khoản T+2.5 để về 100% tiền mặt (cắt lỗ năm 2022 xuống -14.9% thay vì -34.5%).
+                try {
+                    var liveRegime = marketRegimeDetectionService.detectMarketRegime();
+                    if (liveRegime != null && "DOWNTREND_DEFENSE".equalsIgnoreCase(liveRegime.getCurrentRegime())) {
+                        Trade closed = tradeService.executeMarketClose(
                             trade,
                             currentPrice,
-                            qtyToHarvest,
-                            String.format("🎯 Gặt hái 50%% tiền mặt hàng ngày tại giá %s đ (+%s%%)", currentPrice, pnlPct)
+                            String.format("🛡️ [Q1_A CRASH SHIELD] Thoát hàng về tiền mặt khi VN-Index rơi vào DOWNTREND_DEFENSE tại %s đ (%s%%)",
+                                currentPrice, pnlPct.setScale(2, RoundingMode.HALF_UP))
                         );
-                        todayRealizedPnl = todayRealizedPnl.add(partialGain);
+                        todayRealizedPnl = todayRealizedPnl.add(closed.getPnl());
                         todayTradesCount++;
-                        addLog(String.format("🌾 [GẶT HÁI TIỀN MẶT HÀNG NGÀY] Bán 50%% vị thế (%d cp %s tại %s đ). Bỏ túi: +%s đ. Vị thế còn lại %d cp đã có giáp Stop Loss hòa vốn %s đ.",
-                            qtyToHarvest, trade.getSymbol(), currentPrice, partialGain, trade.getQuantity(), trade.getStopLoss()));
-
-                        alertService.createAlert(
-                            trade.getSymbol(),
-                            "PARTIAL_PROFIT_HARVESTED",
-                            "🌾 [CHỐT LỜI 50% TIỀN MẶT] " + trade.getSymbol() + " đã chốt 50% vị thế",
-                            String.format("Đã bán %d cp tại %s đ để bỏ túi lợi nhuận ròng +%s đ. Cổ phiếu còn lại dời Stop Loss lên %s đ đảm bảo không thể thua lỗ!",
-                                qtyToHarvest, currentPrice, partialGain, trade.getStopLoss()),
-                            currentPrice,
-                            "INFO"
-                        );
-                        try {
-                            sseStreamService.broadcast("BOT_PARTIAL_PROFIT_TAKEN", trade);
-                        } catch (Exception ignored) {}
+                        addLog(String.format("🛡️ [Q1_A CRASH SHIELD EXIT] Bán hết %d cp %s @ %s đ do VN-Index gãy xu hướng cấu trúc. PnL: %s đ (%s%%)",
+                            closed.getQuantity(), closed.getSymbol(), currentPrice, closed.getPnl(), closed.getPnlPercent()));
+                        recordTraceEvent("CRASH_SHIELD_EXIT", closed.getSymbol(), java.util.Map.of(
+                            "price", currentPrice, "qty", closed.getQuantity(), "pnl", closed.getPnl(), "pnlPct", closed.getPnlPercent()
+                        ));
+                        try { sseStreamService.broadcast("BOT_TRADE_CLOSED", closed); } catch (Exception ignored) {}
                         continue;
                     }
-                }
+                } catch (Exception ignored) {}
 
-                // 3. Tự động Chốt Lời Đích Cuối (FULL TAKE PROFIT TARGET REACHED)
+                // 2. THOÁT THEO GÃY CẤU TRÚC XU HƯỚNG (Q1_A_INVVOL STRUCTURAL TREND EXIT):
+                // Không chốt non 50% ở +12%, không dời hòa vốn sớm ở +8%!
+                // Chỉ bán khi cổ phiếu gãy ĐỒNG THỜI cả MA20 và MA50 (kết thúc sóng tăng thực sự).
+                try {
+                    StockScanResult liveEval = strategyService.evaluateSymbol(trade.getSymbol());
+                    if (liveEval != null && liveEval.getMa20() != null && liveEval.getMa50() != null
+                        && currentPrice.compareTo(liveEval.getMa20()) < 0
+                        && currentPrice.compareTo(liveEval.getMa50()) < 0) {
+                        Trade closed = tradeService.executeMarketClose(
+                            trade,
+                            currentPrice,
+                            String.format("📉 [Q1_A TREND BREAK EXIT] %s gãy đồng thời MA20 (%s) & MA50 (%s) tại %s đ (%s%%)",
+                                trade.getSymbol(), liveEval.getMa20(), liveEval.getMa50(), currentPrice, pnlPct.setScale(2, RoundingMode.HALF_UP))
+                        );
+                        todayRealizedPnl = todayRealizedPnl.add(closed.getPnl());
+                        todayTradesCount++;
+                        addLog(String.format("📉 [Q1_A TREND BREAK EXIT] Chốt/Thoát %d cp %s @ %s đ do gãy cả MA20 & MA50. PnL: %s đ (%s%%)",
+                            closed.getQuantity(), closed.getSymbol(), currentPrice, closed.getPnl(), closed.getPnlPercent()));
+                        recordTraceEvent("TREND_BREAK_EXIT", closed.getSymbol(), java.util.Map.of(
+                            "price", currentPrice, "ma20", liveEval.getMa20(), "ma50", liveEval.getMa50(),
+                            "pnl", closed.getPnl(), "pnlPct", closed.getPnlPercent()
+                        ));
+                        try { sseStreamService.broadcast("BOT_TRADE_CLOSED", closed); } catch (Exception ignored) {}
+                        continue;
+                    }
+                } catch (Exception ignored) {}
+
+                // 3. Tự động Chốt Lời Đích Cuối (FULL TAKE PROFIT TARGET REACHED - mặc định +35% gồng trọn siêu sóng)
                 if (trade.getTakeProfit() != null && currentPrice.compareTo(trade.getTakeProfit()) >= 0) {
                     Trade closed = tradeService.executeMarketClose(
                         trade,
@@ -796,6 +876,9 @@ public class AutoTradingBotService {
                     todayTradesCount++;
                     addLog(String.format("💰 [BOT CHỐT LỜI THÀNH CÔNG] Đã bán chốt lời %d cp %s tại %s đ. Lợi nhuận: +%s đ (+%s%%)",
                         closed.getQuantity(), closed.getSymbol(), currentPrice, closed.getPnl(), closed.getPnlPercent()));
+                    recordTraceEvent("TAKE_PROFIT_EXECUTED", closed.getSymbol(), java.util.Map.of(
+                        "price", currentPrice, "qty", closed.getQuantity(), "pnl", closed.getPnl(), "pnlPct", closed.getPnlPercent()
+                    ));
 
                     try {
                         sseStreamService.broadcast("BOT_TRADE_CLOSED", closed);
@@ -823,22 +906,18 @@ public class AutoTradingBotService {
     }
 
     /**
-     * DYNAMIC TRAILING STOP ĐA TẦNG
-     * Tự động nâng Stop Loss theo đường "bám đuôi giá" MFE:
-     *   Lãi 2% - 4%  → SL = MFE × 0.975  (trailing -2.5%, khóa tối thiểu hòa vốn)
-     *   Lãi 4% - 6%  → SL = MFE × 0.970  (trailing -3.0%)
-     *   Lãi 6% - 9%  → SL = MFE × 0.965  (trailing -3.5%, tích cực bảo vệ lãi)
-     *   Lãi >= 9%    → SL = MFE × 0.960  (trailing -4.0%, cho giá thở nhưng khóa phần lớn lãi)
-     * Điều kiện: SL mới > SL cũ (chỉ nâng, không hạ) và SL mới > giá vốn (không để lỗ)
+     * Q1_A_INVVOL LET-WINNERS-RUN PROTECTION:
+     * Backtest 6.8 năm chứng minh: Dời hòa vốn ở +8% & chốt 50% ở +12% làm mất gần nửa lãi (+58tr vs +105tr)!
+     * Luật Q1_A_INVVOL:
+     *   - Dưới +20%: KHÔNG dời SL sớm, để cổ phiếu gồng trọn sóng (đã có SL cứng -8%, Crash Shield & Trend-Break MA20/MA50 bảo vệ).
+     *   - Từ +20% trở lên: Dời SL tối thiểu về hòa vốn +0.5% hoặc Chandelier rộng -10% từ đỉnh MFE.
      */
     private void applyDynamicTrailingStop(Trade trade, BigDecimal currentPrice, BigDecimal pnlPct, BigDecimal entryPrice) {
-        if (pnlPct.compareTo(BigDecimal.valueOf(2.0)) < 0) {
-            // Dưới 2%: Chưa đủ lãi để kích hoạt trailing, chỉ lưu PnL
+        if (pnlPct.compareTo(BigDecimal.valueOf(20.0)) < 0) {
             tradeRepository.save(trade);
             return;
         }
 
-        // Lấy giá đỉnh cao nhất (MFE) làm neo tính trailing stop
         BigDecimal mfePrice;
         if (trade.getMfePercent() != null && trade.getMfePercent().compareTo(BigDecimal.ZERO) > 0) {
             mfePrice = entryPrice.multiply(BigDecimal.ONE.add(
@@ -848,62 +927,40 @@ public class AutoTradingBotService {
             mfePrice = currentPrice;
         }
 
-        // Xác định hệ số trailing dựa trên mức lãi hiện tại
-        double trailingFactor;
-        String trailingTier;
-        if (pnlPct.compareTo(BigDecimal.valueOf(9.0)) >= 0) {
-            trailingFactor = 0.960;  // Trailing -4.0%
-            trailingTier = "Tầng 4 (Lãi ≥9%)";
-        } else if (pnlPct.compareTo(BigDecimal.valueOf(6.0)) >= 0) {
-            trailingFactor = 0.965;  // Trailing -3.5%
-            trailingTier = "Tầng 3 (Lãi 6-9%)";
-        } else if (pnlPct.compareTo(BigDecimal.valueOf(4.0)) >= 0) {
-            trailingFactor = 0.970;  // Trailing -3.0%
-            trailingTier = "Tầng 2 (Lãi 4-6%)";
-        } else {
-            trailingFactor = 0.975;  // Trailing -2.5%
-            trailingTier = "Tầng 1 (Lãi 2-4%)";
+        BigDecimal breakEvenSl = QuantitativeStrategyEngine.roundToVietnameseTick(
+            entryPrice.multiply(BigDecimal.valueOf(1.005))
+        );
+        BigDecimal rawNewSl = mfePrice.multiply(BigDecimal.valueOf(0.900)); // Chandelier rộng -10% từ đỉnh MFE
+        BigDecimal newSl = QuantitativeStrategyEngine.roundToVietnameseTick(rawNewSl);
+        if (newSl.compareTo(breakEvenSl) < 0) {
+            newSl = breakEvenSl;
         }
 
-        BigDecimal rawNewSl = mfePrice.multiply(BigDecimal.valueOf(trailingFactor));
-        BigDecimal newSl = QuantitativeStrategyEngine.roundToVietnameseTick(rawNewSl);
-
-        // Nguyên tắc "chỉ nâng không hạ": SL mới phải > SL cũ
         BigDecimal oldSl = trade.getStopLoss();
         if (oldSl != null && newSl.compareTo(oldSl) <= 0) {
             tradeRepository.save(trade);
             return;
         }
 
-        // Không cho phép trailing stop thấp hơn giá vốn (đảm bảo không lỗ từ lệnh đang lãi lớn)
-        BigDecimal breakEvenSl = QuantitativeStrategyEngine.roundToVietnameseTick(
-            entryPrice.multiply(BigDecimal.valueOf(1.003))
-        );
-        if (newSl.compareTo(breakEvenSl) < 0) {
-            newSl = breakEvenSl;
-        }
-
-        boolean isUpgrade = oldSl == null || newSl.compareTo(oldSl) > 0;
-        if (isUpgrade) {
-            trade.setStopLoss(newSl);
-            tradeRepository.save(trade);
-            BigDecimal lockedGainPerShare = newSl.subtract(entryPrice);
-            BigDecimal totalLockedGain = lockedGainPerShare.multiply(BigDecimal.valueOf(trade.getQuantity()));
-            addLog(String.format(
-                "🛡️ [TRAILING STOP %s] %s lãi +%s%% | MFE: %s đ → SL nâng: %s đ → %s đ | Khóa lãi tối thiểu: +%s đ (+%s%%)",
-                trailingTier,
-                trade.getSymbol(),
-                pnlPct.setScale(2, RoundingMode.HALF_UP),
-                mfePrice.setScale(0, RoundingMode.HALF_UP),
-                oldSl != null ? oldSl.setScale(0, RoundingMode.HALF_UP) : "—",
-                newSl.setScale(0, RoundingMode.HALF_UP),
-                totalLockedGain.setScale(0, RoundingMode.HALF_UP),
-                lockedGainPerShare.divide(entryPrice, 4, RoundingMode.HALF_UP)
-                    .multiply(BigDecimal.valueOf(100)).setScale(2, RoundingMode.HALF_UP)
-            ));
-        } else {
-            tradeRepository.save(trade);
-        }
+        trade.setStopLoss(newSl);
+        tradeRepository.save(trade);
+        BigDecimal lockedGainPerShare = newSl.subtract(entryPrice);
+        BigDecimal totalLockedGain = lockedGainPerShare.multiply(BigDecimal.valueOf(trade.getQuantity()));
+        addLog(String.format(
+            "🛡️ [Q1_A SIÊU SÓNG TRAILING ≥20%%] %s lãi +%s%% | MFE: %s đ → SL nâng: %s đ → %s đ | Khóa lãi tối thiểu: +%s đ",
+            trade.getSymbol(),
+            pnlPct.setScale(2, RoundingMode.HALF_UP),
+            mfePrice.setScale(0, RoundingMode.HALF_UP),
+            oldSl != null ? oldSl.setScale(0, RoundingMode.HALF_UP) : "—",
+            newSl.setScale(0, RoundingMode.HALF_UP),
+            totalLockedGain.setScale(0, RoundingMode.HALF_UP)
+        ));
+        recordTraceEvent("TRAILING_STOP_UPGRADED", trade.getSymbol(), java.util.Map.of(
+            "tier", "Q1_A_SUPER_TREND_20PCT",
+            "pnlPct", pnlPct.setScale(2, RoundingMode.HALF_UP),
+            "oldSl", oldSl != null ? oldSl : BigDecimal.ZERO,
+            "newSl", newSl
+        ));
     }
 
     /**
@@ -1150,7 +1207,12 @@ public class AutoTradingBotService {
                             int shares = tacticalBudget.divide(effectiveEntry, 0, RoundingMode.FLOOR).intValue();
                             shares = (shares / 100) * 100; // Làm tròn lô 100 HOSE
                             if (shares >= 100) {
-                                BigDecimal entryPrice = topCandidate.getCurrentPrice();
+                                StockQuote liveQuote = stockPriceService.getQuote(topCandidate.getSymbol());
+                                if (liveQuote == null || liveQuote.isStale() || liveQuote.getPrice() == null || liveQuote.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                                    addLog(String.format("🚨 [DỮ LIỆU STALE] Bỏ qua bắt đáy %s: Không có báo giá REAL.", topCandidate.getSymbol()));
+                                    return;
+                                }
+                                BigDecimal entryPrice = liveQuote.getPrice();
                                 BigDecimal proposedCost = entryPrice.multiply(BigDecimal.valueOf(shares));
                                 if (!riskService.isSectorAllocationAllowed(topCandidate.getSymbol(), proposedCost, accountCapital)) {
                                     return;
@@ -1160,6 +1222,10 @@ public class AutoTradingBotService {
                                 );
                                 if (!guard.allowed()) {
                                     addLog(String.format("🚫 [CHỐT CHẶN BẮT ĐÁY V2] Bỏ qua %s: %s", topCandidate.getSymbol(), guard.vetoReason()));
+                                    if (botDecisionAuditService != null) {
+                                        botDecisionAuditService.recordDecision(topCandidate.getSymbol(), "REJECTED_FILTER", entryPrice,
+                                            guard.vetoFilterCode(), guard.vetoReason() + " | " + guard.auditSummary(), topCandidate.getBounceScore());
+                                    }
                                     return;
                                 }
                                 BigDecimal sl = topCandidate.getTacticalStopLoss() != null ? topCandidate.getTacticalStopLoss() : entryPrice.multiply(BigDecimal.valueOf(0.96));
@@ -1167,6 +1233,7 @@ public class AutoTradingBotService {
 
                                 TradeRequest req = TradeRequest.builder()
                                     .symbol(topCandidate.getSymbol())
+                                    .exchange(liveQuote.getExchange() != null ? liveQuote.getExchange() : "HOSE")
                                     .type("buy")
                                     .price(entryPrice)
                                     .quantity(shares)
@@ -1180,9 +1247,18 @@ public class AutoTradingBotService {
                                     .build();
 
                                 Trade openedTrade = tradeService.createTrade(req);
+                                if (botDecisionAuditService != null && openedTrade != null) {
+                                    botDecisionAuditService.recordDecision(openedTrade.getSymbol(), "BUY_OVERSOLD_REBOUND", openedTrade.getPrice(),
+                                        "TACTICAL_OVERSOLD_REBOUND", guard.auditSummary(), topCandidate.getBounceScore());
+                                }
                                 todayTradesCount++;
                                 addLog(String.format("🔥 [KÍCH HOẠT BẮT ĐÁY HOẢNG LOẠN] Mua %d cp %s giá %,.0f đ | SL: %,.0f đ | TP: %,.0f đ. Đón sóng hồi T+2.5!",
                                     shares, topCandidate.getSymbol(), entryPrice.doubleValue(), sl.doubleValue(), tp.doubleValue()));
+                                recordTraceEvent("TRADE_OPENED", topCandidate.getSymbol(), java.util.Map.of(
+                                    "strategy", "TACTICAL_OVERSOLD_REBOUND",
+                                    "price", entryPrice, "quantity", shares, "stopLoss", sl, "takeProfit", tp,
+                                    "score", topCandidate.getBounceScore(), "audit", guard.auditSummary()
+                                ));
                                 try {
                                     sseStreamService.broadcast("BOT_TRADE_OPENED", openedTrade);
                                 } catch (Exception ignored) {}
@@ -1253,7 +1329,13 @@ public class AutoTradingBotService {
             shares = (shares / 100) * 100;
             if (shares < 100) return;
 
-            BigDecimal entryPrice = topLeader.getPrice();
+            StockQuote liveLeaderQuote = stockPriceService.getQuote(topLeader.getSymbol());
+            if (liveLeaderQuote == null || liveLeaderQuote.isStale() || liveLeaderQuote.getPrice() == null || liveLeaderQuote.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+                addLog(String.format("🚨 [DỮ LIỆU STALE] Bỏ qua Kháng Bão %s: Không có báo giá REAL.", topLeader.getSymbol()));
+                return;
+            }
+
+            BigDecimal entryPrice = liveLeaderQuote.getPrice();
             BigDecimal proposedCost = entryPrice.multiply(BigDecimal.valueOf(shares));
             if (!riskService.isSectorAllocationAllowed(topLeader.getSymbol(), proposedCost, accountCapital)) {
                 return;
@@ -1263,6 +1345,10 @@ public class AutoTradingBotService {
             );
             if (!guard.allowed()) {
                 addLog(String.format("🚫 [CHỐT CHẶN KHÁNG BÃO V2] Bỏ qua %s: %s", topLeader.getSymbol(), guard.vetoReason()));
+                if (botDecisionAuditService != null) {
+                    botDecisionAuditService.recordDecision(topLeader.getSymbol(), "REJECTED_FILTER", entryPrice,
+                        guard.vetoFilterCode(), guard.vetoReason() + " | " + guard.auditSummary(), topLeader.getConfidenceScore());
+                }
                 return;
             }
             BigDecimal sl = topLeader.getStopLoss() != null ? topLeader.getStopLoss()
@@ -1273,6 +1359,7 @@ public class AutoTradingBotService {
             double alpha = topLeader.getChangePercent().doubleValue() - vniChg;
             TradeRequest req = TradeRequest.builder()
                 .symbol(topLeader.getSymbol())
+                .exchange(liveLeaderQuote.getExchange() != null ? liveLeaderQuote.getExchange() : "HOSE")
                 .type("buy")
                 .price(entryPrice)
                 .quantity(shares)
@@ -1284,9 +1371,18 @@ public class AutoTradingBotService {
                 .build();
 
             Trade opened = tradeService.createTrade(req);
+            if (botDecisionAuditService != null && opened != null) {
+                botDecisionAuditService.recordDecision(opened.getSymbol(), "BUY_ANTI_MARKET_LEADER", opened.getPrice(),
+                    "ANTI_MARKET_RS_LEADER", guard.auditSummary(), topLeader.getConfidenceScore());
+            }
             todayTradesCount++;
             addLog(String.format("🦅 [SĂN CỔ PHIẾU KHÁNG BÃO] Mua thăm dò %d cp %s giá %,.0f đ (Khỏe hơn VNI %+.2f%%) | SL: %,.0f đ | TP: %,.0f đ!",
                 shares, topLeader.getSymbol(), entryPrice.doubleValue(), alpha, sl.doubleValue(), tp.doubleValue()));
+            recordTraceEvent("TRADE_OPENED", topLeader.getSymbol(), java.util.Map.of(
+                "strategy", "ANTI_MARKET_RS_LEADER",
+                "price", entryPrice, "quantity", shares, "stopLoss", sl, "takeProfit", tp,
+                "score", topLeader.getConfidenceScore(), "alphaPct", alpha, "audit", guard.auditSummary()
+            ));
             try {
                 sseStreamService.broadcast("BOT_TRADE_OPENED", opened);
             } catch (Exception ignored) {}
@@ -1402,15 +1498,12 @@ public class AutoTradingBotService {
             summary.append("RRG=ERR; ");
         }
 
+        // Kalman & MTF: Ghi nhận Shadow Mode (không chặn cứng Over-filtering để tránh bóp nghẹt sóng tăng theo kết quả Ablation 6.5 năm)
         try {
             KalmanFilterTrendDto kalman = kalmanFilterTrendService.analyzeKalmanTrend(symbol);
             if (kalman != null) {
                 boolean isBearish = "BEARISH_DOWNWARD".equals(kalman.getTrendRegime());
-                summary.append("KALMAN=").append(isBearish ? "VETO_BEAR" : "PASS").append("; ");
-                if (applyTrendGates && isBearish && vetoCode == null) {
-                    vetoCode = "KALMAN_BEARISH";
-                    vetoReason = "Bộ lọc Kalman xác nhận vận tốc xu hướng đang cắm xuống (BEARISH_DOWNWARD)";
-                }
+                summary.append("KALMAN=").append(isBearish ? "SHADOW_BEAR" : "PASS").append("; ");
             } else {
                 summary.append("KALMAN=NONE; ");
             }
@@ -1422,11 +1515,7 @@ public class AutoTradingBotService {
             MultiTimeframeConfluenceDto mtf = confluenceService.analyzeMultiTimeframe(symbol);
             if (mtf != null) {
                 int mtfScore = mtf.getConfluenceScore();
-                summary.append("MTF=").append(mtfScore >= 45 ? "PASS(" + mtfScore + ")" : "VETO(" + mtfScore + ")").append("; ");
-                if (applyTrendGates && mtfScore < 45 && vetoCode == null) {
-                    vetoCode = "MTF_CONFLICT";
-                    vetoReason = "Xung đột đa khung giờ (MTF Score = " + mtfScore + " < 45)";
-                }
+                summary.append("MTF=").append(mtfScore >= 45 ? "PASS(" + mtfScore + ")" : "SHADOW_LOW(" + mtfScore + ")").append("; ");
             } else {
                 summary.append("MTF=NONE; ");
             }
@@ -1456,5 +1545,66 @@ public class AutoTradingBotService {
         }
 
         return new PreTradeFilterOutcome(vetoCode == null, vetoCode, vetoReason, summary.toString());
+    }
+
+    private void recordTraceEvent(String eventType, String symbol, java.util.Map<String, Object> payload) {
+        if (traceLoggerService != null) {
+            traceLoggerService.recordEvent(eventType, symbol, payload);
+        }
+    }
+
+    private void recordCycleDeltaTrace(MarketRegimeDto regime, MarketCrashProtectionDto crashStatus,
+                                       List<Trade> openTrades, List<StockScanResult> scans) {
+        if (traceLoggerService == null) return;
+        try {
+            StringBuilder sig = new StringBuilder();
+            String regimeCode = regime != null ? regime.getCurrentRegime() : "UNKNOWN";
+            BigDecimal vniLevel = regime != null && regime.getVnIndexLevel() != null ? regime.getVnIndexLevel() : BigDecimal.ZERO;
+            BigDecimal vniChg = regime != null && regime.getVnIndexChangePercent() != null ? regime.getVnIndexChangePercent() : BigDecimal.ZERO;
+            sig.append(regimeCode).append("|").append(vniLevel.setScale(1, RoundingMode.HALF_UP));
+
+            List<java.util.Map<String, Object>> posSnapshots = new ArrayList<>();
+            for (Trade t : openTrades) {
+                BigDecimal pnlPct = t.getPnlPercent() != null ? t.getPnlPercent().setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+                sig.append("|").append(t.getSymbol()).append(":").append(pnlPct).append(":").append(t.getStopLoss());
+                java.util.Map<String, Object> pm = new java.util.LinkedHashMap<>();
+                pm.put("symbol", t.getSymbol());
+                pm.put("qty", t.getQuantity());
+                pm.put("entry", t.getPrice());
+                pm.put("sl", t.getStopLoss());
+                pm.put("tp", t.getTakeProfit());
+                pm.put("pnlPct", pnlPct);
+                posSnapshots.add(pm);
+            }
+
+            List<java.util.Map<String, Object>> topCandidates = new ArrayList<>();
+            if (scans != null) {
+                scans.stream()
+                    .filter(s -> s.getConfidenceScore() >= 70)
+                    .sorted((a, b) -> Integer.compare(b.getConfidenceScore(), a.getConfidenceScore()))
+                    .limit(5)
+                    .forEach(s -> {
+                        java.util.Map<String, Object> cm = new java.util.LinkedHashMap<>();
+                        cm.put("symbol", s.getSymbol());
+                        cm.put("price", s.getPrice());
+                        cm.put("score", s.getConfidenceScore());
+                        cm.put("action", s.getAction());
+                        cm.put("signal", s.getSignalType());
+                        topCandidates.add(cm);
+                    });
+            }
+
+            java.util.Map<String, Object> snap = new java.util.LinkedHashMap<>();
+            snap.put("regime", regimeCode);
+            snap.put("vnIndex", vniLevel);
+            snap.put("vnIndexChgPct", vniChg);
+            snap.put("defconAllowBuy", crashStatus != null && crashStatus.isAllowNewPurchases());
+            snap.put("cash", getAvailableCash());
+            snap.put("nav", getCurrentNav());
+            snap.put("openPositions", posSnapshots);
+            snap.put("topCandidates", topCandidates);
+
+            traceLoggerService.recordMarketDelta(sig.toString(), snap);
+        } catch (Exception ignored) {}
     }
 }

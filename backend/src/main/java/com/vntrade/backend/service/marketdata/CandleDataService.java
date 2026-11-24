@@ -27,8 +27,14 @@ public class CandleDataService {
     private final ObjectMapper objectMapper;
     private final StockPriceService stockPriceService;
 
-    // Cache historical candles thread-safe cho xử lý song song
-    private final Map<String, List<Candle>> candleCache = new java.util.concurrent.ConcurrentHashMap<>();
+    // Cache historical candles thread-safe có TTL 5 phút để tự động cập nhật nến & Volume thật trong phiên
+    private static final long CACHE_TTL_MS = 5 * 60 * 1000L;
+    private record CachedCandles(List<Candle> candles, long timestampMs) {}
+    private final Map<String, CachedCandles> candleCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public void clearCache() {
+        candleCache.clear();
+    }
 
     public CandleDataService(StockPriceService stockPriceService) {
         var requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
@@ -46,8 +52,10 @@ public class CandleDataService {
         String sym = symbol.toUpperCase().trim();
         String cacheKey = sym + "_" + days;
 
-        if (candleCache.containsKey(cacheKey)) {
-            return candleCache.get(cacheKey);
+        long nowMs = System.currentTimeMillis();
+        CachedCandles cached = candleCache.get(cacheKey);
+        if (cached != null && (nowMs - cached.timestampMs()) < CACHE_TTL_MS) {
+            return cached.candles();
         }
 
         // 1. Thử lấy dữ liệu nến thật từ VNDirect Dchart API
@@ -69,7 +77,7 @@ public class CandleDataService {
             candles = generateRealisticHistoricalCandles(sym, days);
         }
 
-        candleCache.put(cacheKey, candles);
+        candleCache.put(cacheKey, new CachedCandles(candles, nowMs));
         return candles;
     }
 

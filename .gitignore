@@ -6,9 +6,9 @@
 backend/target/
 backend/.mvn/wrapper/maven-wrapper.jar
 backend/data/*.db
-!backend/data/vntrade_db.mv.db
 backend/data/*.trace.db
 backend/data/*.lock.db
+backend/logs/
 
 # Frontend build & dependencies
 frontend/node_modules/

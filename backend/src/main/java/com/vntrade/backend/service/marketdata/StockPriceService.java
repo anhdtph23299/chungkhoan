@@ -35,10 +35,10 @@ public class StockPriceService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
-    // Cache thread-safe cho xử lý song song nhiều mã
+    // Cache thread-safe cho xử lý song song nhiều mã (20 giây để phản ứng nhanh SL / Trailing Stop trong phiên)
     private final Map<String, StockQuote> cache = new ConcurrentHashMap<>();
     private final Map<String, Long> cacheTime = new ConcurrentHashMap<>();
-    private static final long CACHE_TTL_MS = 60_000; // 1 phút
+    private static final long CACHE_TTL_MS = 20_000; // 20 giây
 
     public StockPriceService() {
         var requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory();

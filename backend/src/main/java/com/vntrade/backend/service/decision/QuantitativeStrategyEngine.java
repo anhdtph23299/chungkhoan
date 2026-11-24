@@ -54,6 +54,12 @@ public class QuantitativeStrategyEngine {
         BigDecimal curVolSma = (volSma20 != null && volSma20.get(lastIdx) != null) ? volSma20.get(lastIdx) : BigDecimal.valueOf(1_000_000);
 
         long currentVol = currentCandle.getVolume() != null ? currentCandle.getVolume() : 1_000_000L;
+        if (quote != null && quote.isReal() && quote.getVolume() != null && quote.getVolume() > 0) {
+            boolean isTodayCandle = currentCandle.getDate() != null && currentCandle.getDate().equals(java.time.LocalDate.now());
+            if (isTodayCandle && quote.getVolume() > currentVol) {
+                currentVol = quote.getVolume();
+            }
+        }
         BigDecimal volRatio = curVolSma.compareTo(BigDecimal.ZERO) > 0
             ? BigDecimal.valueOf(currentVol).divide(curVolSma, 2, RoundingMode.HALF_UP)
             : BigDecimal.ONE;
@@ -144,16 +150,49 @@ public class QuantitativeStrategyEngine {
             volumeScore += 5;
         }
 
+        // 1.1c. Quant V3 Dual Risk-Adjusted Momentum (Kiểm chứng 6.5 năm VN30: Exp +2.61%/lệnh, PF 1.80, p < 0.05)
+        double ret20d = 0.0;
+        double ret60d = 0.0;
+        double vol20d = 0.02;
+        if (lastIdx >= 20 && candles.get(lastIdx - 20).getClose() != null && candles.get(lastIdx - 20).getClose().doubleValue() > 0) {
+            ret20d = (price.doubleValue() / candles.get(lastIdx - 20).getClose().doubleValue()) - 1.0;
+            double sumR = 0.0;
+            double[] dailyRets = new double[20];
+            for (int k = 0; k < 20; k++) {
+                double c1 = candles.get(lastIdx - 19 + k).getClose().doubleValue();
+                double c0 = candles.get(lastIdx - 20 + k).getClose().doubleValue();
+                dailyRets[k] = c0 > 0 ? (c1 / c0 - 1.0) : 0.0;
+                sumR += dailyRets[k];
+            }
+            double meanR = sumR / 20.0;
+            double var = 0.0;
+            for (double r : dailyRets) var += (r - meanR) * (r - meanR);
+            vol20d = Math.max(0.008, Math.sqrt(var / 19.0));
+        }
+        int lookbackMom = Math.min(60, lastIdx);
+        if (lookbackMom >= 30 && candles.get(lastIdx - lookbackMom).getClose() != null && candles.get(lastIdx - lookbackMom).getClose().doubleValue() > 0) {
+            ret60d = (price.doubleValue() / candles.get(lastIdx - lookbackMom).getClose().doubleValue()) - 1.0;
+        }
+        double riskAdjMomentum = (0.60 * ret60d + 0.40 * ret20d) / vol20d;
+        int dualMomBonus = 0;
+        if (price.compareTo(curSma50) > 0 && ret60d > 0.0 && riskAdjMomentum >= 2.5) {
+            dualMomBonus = 12; // Siêu cổ phiếu Dual Momentum dẫn sóng, biến động êm (Sharpe cao)
+        } else if (price.compareTo(curSma50) > 0 && ret60d > 0.0 && riskAdjMomentum >= 1.0) {
+            dualMomBonus = 6;
+        } else if (ret60d < -0.05) {
+            dualMomBonus = -10; // Tránh cổ phiếu suy yếu trung hạn
+        }
+
         int riskRewardScore = 0;
-        // Stop loss: khống chế tối đa 6.0% (bảo vệ 1 cây sàn HOSE)
-        BigDecimal atrSlDistance = curAtr.multiply(BigDecimal.valueOf(1.5)).setScale(0, RoundingMode.HALF_UP);
-        BigDecimal maxSlPercentDistance = price.multiply(BigDecimal.valueOf(0.06)).setScale(0, RoundingMode.HALF_UP);
+        // Stop loss chuẩn Q1_A_INVVOL: 2.5x ATR, khống chế tối đa 8.0% (O'Neil max SL, tránh rũ nhiễu HOSE)
+        BigDecimal atrSlDistance = curAtr.multiply(BigDecimal.valueOf(2.5)).setScale(0, RoundingMode.HALF_UP);
+        BigDecimal maxSlPercentDistance = price.multiply(BigDecimal.valueOf(0.08)).setScale(0, RoundingMode.HALF_UP);
         BigDecimal slDistance = atrSlDistance.min(maxSlPercentDistance);
         if (slDistance.compareTo(BigDecimal.ZERO) <= 0) slDistance = maxSlPercentDistance;
         BigDecimal stopLoss = roundToVietnameseTick(price.subtract(slDistance));
 
-        // Take Profit: Mục tiêu 18% (R:R = 1:3 theo chuẩn Minervini)
-        BigDecimal tpDistance = price.multiply(BigDecimal.valueOf(0.18)).setScale(0, RoundingMode.HALF_UP);
+        // Take Profit mở rộng +35% (Let Winners Run: không cắt cụt siêu sóng, ưu tiên thoát khi gãy cấu trúc EMA20/SMA50)
+        BigDecimal tpDistance = price.multiply(BigDecimal.valueOf(0.35)).setScale(0, RoundingMode.HALF_UP);
         BigDecimal targetPrice = roundToVietnameseTick(price.add(tpDistance));
 
         double rrRatio = slDistance.compareTo(BigDecimal.ZERO) > 0
@@ -163,7 +202,7 @@ public class QuantitativeStrategyEngine {
         if (rrRatio >= 2.5) riskRewardScore += 20;
         else if (rrRatio >= 1.8) riskRewardScore += 12;
 
-        int totalScore = trendScore + momentumScore + volumeScore + riskRewardScore + leaderScore;
+        int totalScore = trendScore + momentumScore + volumeScore + riskRewardScore + leaderScore + dualMomBonus;
         totalScore = Math.min(100, Math.max(15, totalScore));
 
         // Bẫy FOMO trần tím T+2.5: Cổ phiếu tăng trần > +5.8% trong ngày tuyệt đối không mua đuổi

@@ -474,4 +474,60 @@ public class AutoTradingBotServiceTest {
         verify(tradeService, never()).createTrade(any());
         assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("KIỂM SOÁT NGÀNH")));
     }
+
+    @Test
+    void testExecuteBotCycle_DailyMaxLossCircuitBreakerBlocksAllBuys() {
+        // Giả lập hôm nay đã chốt lỗ -2.100.000 đ (vượt cầu chì -2.000.000 đ)
+        Trade lostToday = Trade.builder()
+            .id(99L)
+            .symbol("SSI")
+            .status("closed")
+            .closeDate(LocalDate.now())
+            .pnl(BigDecimal.valueOf(-2_100_000))
+            .build();
+        when(tradeRepository.findAll()).thenReturn(List.of(lostToday));
+
+        StockScanResult mockScan = StockScanResult.builder()
+            .symbol("FPT")
+            .exchange("HOSE")
+            .action("STRONG_BUY")
+            .confidenceScore(95)
+            .price(BigDecimal.valueOf(140000))
+            .stopLoss(BigDecimal.valueOf(131600))
+            .targetPrice(BigDecimal.valueOf(165200))
+            .build();
+        when(strategyService.scanAllStocks()).thenReturn(List.of(mockScan));
+
+        botService.executeBotCycle();
+
+        verify(tradeService, never()).createTrade(any());
+        assertTrue(botService.getBotLogs().stream().anyMatch(log -> log.contains("CẦU CHÌ LỖ NGÀY ĐÃ KÍCH HOẠT")));
+        verify(botDecisionAuditService).recordDecision(eq("PORTFOLIO"), eq("REJECTED_FILTER"), any(), eq("DAILY_MAX_LOSS_BREAKER"), anyString(), eq(0));
+    }
+
+    @Test
+    void testManageOpenPositions_IgnoresStaleQuoteToPreventFalseStopLoss() {
+        Trade openTrade = Trade.builder()
+            .id(10L)
+            .symbol("STB")
+            .tradeDate(LocalDate.now().minusDays(5))
+            .price(BigDecimal.valueOf(72500))
+            .quantity(200)
+            .stopLoss(BigDecimal.valueOf(69300))
+            .takeProfit(BigDecimal.valueOf(85600))
+            .status("open")
+            .build();
+        when(tradeRepository.findByStatusOrderByTradeDateDesc("open")).thenReturn(List.of(openTrade));
+        when(stockPriceService.getQuote("STB")).thenReturn(
+            StockQuote.builder()
+                .symbol("STB")
+                .price(BigDecimal.valueOf(65000)) // Giá tụt sâu dưới SL nhưng bị đánh dấu STALE
+                .dataSource("STALE")
+                .build()
+        );
+
+        botService.manageOpenPositions();
+
+        verify(tradeService, never()).executeMarketClose(any(), any(), any());
+    }
 }

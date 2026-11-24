@@ -176,9 +176,31 @@ public class PreMarketSentimentService {
             HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200 || resp.body() == null) return null;
 
-            JsonNode meta = objectMapper.readTree(resp.body()).path("chart").path("result").path(0).path("meta");
+            JsonNode result0 = objectMapper.readTree(resp.body()).path("chart").path("result").path(0);
+            JsonNode meta = result0.path("meta");
             double price = meta.path("regularMarketPrice").asDouble(0.0);
-            double prevClose = meta.path("chartPreviousClose").asDouble(0.0);
+
+            // Lấy giá đóng cửa phiên liền trước từ mảng nến close (tránh lỗi chartPreviousClose của range=5d lấy giá 5 ngày trước)
+            double prevClose = 0.0;
+            JsonNode closeArr = result0.path("indicators").path("quote").path(0).path("close");
+            if (closeArr.isArray() && closeArr.size() >= 2) {
+                List<Double> validCloses = new ArrayList<>();
+                for (JsonNode n : closeArr) {
+                    if (n != null && !n.isNull() && n.asDouble(0.0) > 0.0) {
+                        validCloses.add(n.asDouble());
+                    }
+                }
+                if (validCloses.size() >= 2) {
+                    if (price <= 0) price = validCloses.get(validCloses.size() - 1);
+                    prevClose = validCloses.get(validCloses.size() - 2);
+                }
+            }
+            if (prevClose <= 0) {
+                prevClose = meta.path("previousClose").asDouble(0.0);
+            }
+            if (prevClose <= 0) {
+                prevClose = meta.path("chartPreviousClose").asDouble(0.0);
+            }
             if (price <= 0) return null;
             double chgPct = prevClose > 0 ? ((price - prevClose) / prevClose) * 100.0 : 0.0;
             return new YahooQuote(

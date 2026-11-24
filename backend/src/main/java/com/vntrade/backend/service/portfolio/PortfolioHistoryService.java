@@ -42,7 +42,12 @@ public class PortfolioHistoryService {
         for (Trade t : openTrades) {
             BigDecimal cost = t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity()));
             BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
-            investedCostWithFee = investedCostWithFee.add(cost).add(fee);
+            int partialQty = t.getPartialClosedQuantity() != null ? t.getPartialClosedQuantity() : 0;
+            int origQty = t.getQuantity() + partialQty;
+            BigDecimal remainingFee = (partialQty > 0 && origQty > 0)
+                ? fee.multiply(BigDecimal.valueOf(t.getQuantity())).divide(BigDecimal.valueOf(origQty), 0, RoundingMode.HALF_UP)
+                : fee;
+            investedCostWithFee = investedCostWithFee.add(cost).add(remainingFee);
             if (t.getPnl() != null) {
                 unrealized = unrealized.add(t.getPnl());
             }
@@ -157,8 +162,13 @@ public class PortfolioHistoryService {
         for (Trade t : openTrades) {
             BigDecimal cost = t.getPrice().multiply(BigDecimal.valueOf(t.getQuantity()));
             BigDecimal fee = t.getFee() != null ? t.getFee() : BigDecimal.ZERO;
+            int partialQty = t.getPartialClosedQuantity() != null ? t.getPartialClosedQuantity() : 0;
+            int origQty = t.getQuantity() + partialQty;
+            BigDecimal remainingFee = (partialQty > 0 && origQty > 0)
+                ? fee.multiply(BigDecimal.valueOf(t.getQuantity())).divide(BigDecimal.valueOf(origQty), 0, RoundingMode.HALF_UP)
+                : fee;
             investedCost = investedCost.add(cost);
-            investedCostWithFee = investedCostWithFee.add(cost).add(fee);
+            investedCostWithFee = investedCostWithFee.add(cost).add(remainingFee);
             if (t.getPnl() != null) unrealized = unrealized.add(t.getPnl());
             if (t.getPartialRealizedPnl() != null) partialRealized = partialRealized.add(t.getPartialRealizedPnl());
         }
